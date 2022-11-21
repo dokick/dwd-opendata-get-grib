@@ -47,7 +47,7 @@ def download_whole_day(dest_folder: str):
     # models = ("icosahedral_model-level", "icosahedral_pressure_level",
             #   "regular-lat-lon_model-level", "regular-lat-lon_pressure-level")
     model  = "regular-lat-lon_model-level"
-    time_stamps = (r"/00", r"/03", r"/06", r"/09", r"/12", r"/15", r"/18", r"/21")
+    time_stamps = ("00", "03", "06", "09", "12", "15", "18", "21")
     pressure_levels = [200, 250, 300, 400, 500, 600, 700, 850, 950, 975, 1000]  # hPa
     standard_half_heights = [22000.000, 19401.852, 18013.409, 16906.264, 15958.169, 15118.009,
                              14358.139, 13661.439, 13016.363, 12414.654, 11850.143, 11318.068,
@@ -71,28 +71,28 @@ def download_whole_day(dest_folder: str):
                              1320.458, 1196.457, 1077.658, 964.048, 855.630, 752.427,
                              654.479, 561.856, 474.652, 393.002, 317.092, 247.172,
                              183.592, 126.857, 77.745, 37.606, 10.000]
-    fields = (r"/u", r"/v", r"/w")
+    fields = ("u", "v", "w")
     number_of_flight_levels = 65
 
     year, month, day, *useless = localtime()
     today = f"{year}{month}{day}"
 
-    bz2_file_begin = fr"/icon-d2_germany_{model}_"
+    bz2_file_begin = fr"icon-d2_germany_{model}_"
     bz2_file_end = r".grib2.bz2"
 
     for time_stamp, field in product(time_stamps, fields):
-        # path_to_dest_folder = os.path.join(dest_folder, time_stamp[1:], field[1:])
-        path_to_dest_folder = fr"{dest_folder}{time_stamp}{field}"
-        for hour in range(48):
+        # path_to_dest_folder = fr"{dest_folder}{time_stamp}{field}"
+        path_to_dest_folder = os.path.join(dest_folder, time_stamp, field)
+        for hour in range(48+1):
             for flight_level in range(number_of_flight_levels):
                 if hour < 10:
-                    bz2_file = fr"{bz2_file_begin}{today}{time_stamp[1:]}_00{hour}_{flight_level+1}_{field[1:]}{bz2_file_end}"
+                    bz2_file = fr"{bz2_file_begin}{today}{time_stamp}_00{hour}_{flight_level+1}_{field}{bz2_file_end}"
                 else:
-                    bz2_file = fr"{bz2_file_begin}{today}{time_stamp[1:]}_0{hour}_{flight_level+1}_{field[1:]}{bz2_file_end}"
+                    bz2_file = fr"{bz2_file_begin}{today}{time_stamp}_0{hour}_{flight_level+1}_{field}{bz2_file_end}"
                 # url_to_bz2_file = url_to_icond2.join((time_stamp, field, bz2_file))
-                url_to_bz2_file = fr"{url_to_icond2}{time_stamp}{field}{bz2_file}"
+                url_to_bz2_file = fr"{url_to_icond2}/{time_stamp}/{field}/{bz2_file}"
                 download_grib_file(url_to_bz2_file, path_to_dest_folder)
-                extract_grib_file(fr"{path_to_dest_folder}{bz2_file}")
+                extract_grib_file(fr"{path_to_dest_folder}/{bz2_file}")
                 if flight_level == 10:
                     break
             break
@@ -114,13 +114,13 @@ def dump_grib_data(path_to_file: str):
     Args:
         path_to_file (str): path to file (with the file name at the end)
     """
-    file_name = os.path.basename(os.path.normpath(path_to_file))
-    grib_stdout = subprocess.run(["grib_dump", "-j", file_name],
+    # file_name = os.path.basename(os.path.normpath(path_to_file))
+    grib_stdout = subprocess.run(["grib_dump", "-j", path_to_file],
                                  capture_output=True, text=True, check=True)
     json_dict = json.loads(grib_stdout.stdout)
     json_dict = optimize_json(json_dict)
 
-    path_to_json = path_to_file[:-5].join("json")
+    path_to_json = f"{path_to_file[:-5]}.json"
     with open(path_to_json, "w", encoding="utf8") as json_file:
         json.dump(json_dict, json_file, indent=4)
 
@@ -134,13 +134,40 @@ def optimize_json(json_dict: dict) -> dict:
     Returns:
         dict: better and more readable json format
     """
-    amount_of_messages = len(json_dict["messages"][0])
     json_obj = json_dict["messages"][0]
+    amount_of_messages = len(json_obj)
     return {json_obj[i]["key"]: json_obj[i]["value"] for i in range(amount_of_messages)}
 
 
 def provide_database(dest_folder: str):
-    pass
+    """Function that downloads, extracts optimizes the data
+
+    Args:
+        dest_folder (str): path to destination folder
+    """
+    download_whole_day(dest_folder)
+
+    model = "regular-lat-lon_model-level"
+    time_stamps = ("00", "03", "06", "09", "12", "15", "18", "21")
+    fields = ("u", "v", "w")
+    number_of_flight_levels = 65
+
+    grib_file_begin = f"icon-d2_germany_{model}_"
+    grib_file_end = ".grib2"
+
+    year, month, day, *useless = localtime()
+    today = f"{year}{month}{day}"
+
+    for time_stamp, field in product(time_stamps, fields):
+        path_to_field_folder = os.path.join(dest_folder, time_stamp, field)
+        for hour in range(48+1):
+            for flight_level in range(number_of_flight_levels):
+                if hour < 10:
+                    grib_file_name = fr"{grib_file_begin}{today}{time_stamp}_00{hour}_{flight_level+1}_{field}{grib_file_end}"
+                else:
+                    grib_file_name = fr"{grib_file_begin}{today}{time_stamp}_0{hour}_{flight_level+1}_{field}{grib_file_end}"
+                path_to_file = os.path.join(path_to_field_folder, grib_file_name)
+                dump_grib_data(path_to_file)
 
 
 def main():
@@ -152,7 +179,7 @@ def main():
     # url = r"http://opendata.dwd.de/weather/nwp/icon-d2/grib/00/u"
     # file_name = r"/icon-d2_germany_regular-lat-lon_model-level_2022111400_000_10_u.grib2.bz2"
     # download_grib_file(url.join(file_name), path_to_model)
-    download_whole_day(path_to_model)
+    provide_database(path_to_model)
 
 
 if __name__ == "__main__":
