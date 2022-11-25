@@ -31,6 +31,7 @@ Pressure levels (hPa): 200, 250, 300, 400, 500, 600, 700, 850, 950, 975, 1000
 from itertools import product
 import json
 import os.path
+from os import fsync
 import subprocess
 from time import localtime
 import requests
@@ -57,7 +58,8 @@ def download_grib_file(url: str, dest_folder: str) -> None:
                 if chunk:
                     grib_file.write(chunk)
                     grib_file.flush()
-                    os.fsync(grib_file.fileno())
+                    # os.fsync(grib_file.fileno())
+                    fsync(grib_file.fileno())
     else:  # HTTP status code 4XX/5XX
         print(f"Download failed: status code {req.status_code}\n{req.text}")
 
