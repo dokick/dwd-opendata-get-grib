@@ -104,7 +104,7 @@ def provide_database(dest_folder: str, *, number_of_hours: int = 48) -> None:
                 download_grib_file(url_to_bz2_file, path_to_field_folder)
                 extract_grib_file(os.path.join(path_to_field_folder, bz2_file))
                 dump_grib_data(path_to_file)
-        delete_grib_files(path_to_field_folder)
+        # delete_grib_files(path_to_field_folder)
 
 
 def extract_grib_file(path_to_grib_file: str) -> None:
@@ -141,7 +141,7 @@ def delete_grib_files(dest_folder: str) -> None:
         dest_folder (str): folder with grib files
     """
     path_with_grib_ending = os.path.join(dest_folder, "*.grib2")
-    subprocess.run(["rm", path_with_grib_ending], check=True)
+    subprocess.run(["rm", path_with_grib_ending], check=True, )
 
 
 def optimize_json(json_dict: dict) -> dict:
@@ -163,7 +163,7 @@ def main():
     path_to_model = os.path.join(os.path.expanduser("~"),
                                  "Dokumente", "_TU", "Bachelor", "DWD", "icon-d2")
     path_to_model = os.path.join(r"/media/sf_icon-d2")
-    number_of_hours = 10
+    number_of_hours = 2
     provide_database(path_to_model, number_of_hours=number_of_hours)
 
 
