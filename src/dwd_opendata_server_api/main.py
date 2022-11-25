@@ -62,11 +62,12 @@ def download_grib_file(url: str, dest_folder: str) -> None:
         print(f"Download failed: status code {req.status_code}\n{req.text}")
 
 
-def provide_database(dest_folder: str) -> None:
+def provide_database(dest_folder: str, *, number_of_hours: int = 48) -> None:
     """Downloads a whole day from the OpenData DWD Server
 
     Args:
         dest_folder (str): destination of the directory
+        number_of_hours (int, optional): number of desired hours. Defaults to 48.
     """
     url_to_icond2 = r"http://opendata.dwd.de/weather/nwp/icon-d2/grib"
     # models = ("icosahedral_model-level", "icosahedral_pressure_level",
@@ -84,9 +85,8 @@ def provide_database(dest_folder: str) -> None:
     grib_file_end = r".grib2"
 
     for time_stamp, field in product(time_stamps, fields):
-        # path_to_dest_folder = fr"{dest_folder}{time_stamp}{field}"
         path_to_field_folder = os.path.join(dest_folder, time_stamp, field)
-        for hour in range(48+1):
+        for hour in range(number_of_hours + 1):
             for flight_level in range(number_of_flight_levels):
                 file_begin_extended = fr"{file_begin}{today}{time_stamp}"
                 bz2_file_end_extended = fr"{hour}_{flight_level+1}_{field}{bz2_file_end}"
@@ -161,7 +161,8 @@ def main():
     path_to_model = os.path.join(os.path.expanduser("~"),
                                  "Dokumente", "_TU", "Bachelor", "DWD", "icon-d2")
     path_to_model = os.path.join(r"/media/sf_icon-d2")
-    provide_database(path_to_model)
+    number_of_hours = 10
+    provide_database(path_to_model, number_of_hours=number_of_hours)
 
 
 if __name__ == "__main__":
