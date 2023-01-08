@@ -12,6 +12,7 @@ Flight levels (half levels) (m): 22000.000, 19401.852, 18013.409, 16906.264, 159
                                  1383.761, 1257.155, 1135.760, 1019.556, 908.539, 802.721,
                                  702.132, 606.827, 516.885, 432.419, 353.586, 280.598,
                                  213.746, 153.438, 100.277, 55.212, 20.000, 0.000
+29 until 3000
 
 Flight levels (full levels) (m): 20700.926, 18707.630, 17459.836, 16432.216, 15538.089, 14738.074,
                                  14009.789, 13338.901, 12715.508, 12132.398, 11584.105, 11066.360,
@@ -24,16 +25,18 @@ Flight levels (full levels) (m): 20700.926, 18707.630, 17459.836, 16432.216, 155
                                  1320.458, 1196.457, 1077.658, 964.048, 855.630, 752.427,
                                  654.479, 561.856, 474.652, 393.002, 317.092, 247.172,
                                  183.592, 126.857, 77.745, 37.606, 10.000
+28 until 3000
 
 Pressure levels (hPa): 200, 250, 300, 400, 500, 600, 700, 850, 950, 975, 1000
 """
 
-from itertools import product
 import json
 import os.path
-from os import fsync
 import subprocess
+from itertools import product
+from os import fsync, makedirs
 from time import localtime
+
 import requests
 
 
@@ -64,46 +67,67 @@ def download_grib_file(url: str, dest_folder: str) -> None:
         print(f"Download failed: status code {req.status_code}\n{req.text}")
 
 
-def provide_database(dest_folder: str, *, number_of_hours: int = 48) -> None:
+def provide_database(dest_folder: str, *, number_of_hours: int = 48,
+                                          number_of_flight_levels: int = 65) -> None:
     """Downloads a whole day from the OpenData DWD Server
 
     Args:
         dest_folder (str): destination of the directory
         number_of_hours (int, optional): number of desired hours. Defaults to 48.
+        number_of_flight_levels (int, optional): number of desired flight levels. Defaults to 65.
     """
     url_to_icond2 = r"http://opendata.dwd.de/weather/nwp/icon-d2/grib"
     # models = ("icosahedral_model-level", "icosahedral_pressure_level",
             #   "regular-lat-lon_model-level", "regular-lat-lon_pressure-level")
     model  = "regular-lat-lon_model-level"
-    time_stamps = ("00", "03", "06", "09", "12", "15", "18", "21")
+    # time_stamps = ("00", "03", "06", "09", "12", "15", "18", "21")
     fields = ("u", "v", "w")
 
-    year, month, day, *useless = localtime()
-    today = f"{year}{month}{day}"
-    number_of_flight_levels = 65
+    year, month, day, hour, *useless = localtime()
+    latest_hour = hour - hour % 3
+    time_stamp = f"{year}{month:02d}{day:02d}{latest_hour}"
+
+    if not os.path.exists(os.path.join(dest_folder, time_stamp)):
+        makedirs(os.path.join(dest_folder, time_stamp))
 
     file_begin = fr"icon-d2_germany_{model}_"
     bz2_file_end = r".grib2.bz2"
     grib_file_end = r".grib2"
 
-    for time_stamp, field in product(time_stamps, fields):
+    # for time_stamp, field in product(time_stamps, fields):
+    #     path_to_field_folder = os.path.join(dest_folder, time_stamp, field)
+    #     file_begin_extended = fr"{file_begin}{time_stamp}"
+    #     for hour in range(number_of_hours + 1):
+    #         for flight_level in range(1, number_of_flight_levels+1):
+    #             bz2_file_end_extended = fr"{hour}_{flight_level}_{field}{bz2_file_end}"
+    #             grib_file_end_extended = fr"{hour}_{flight_level}_{field}{grib_file_end}"
+    #             if hour < 10:
+    #                 bz2_file = fr"{file_begin_extended}_00{bz2_file_end_extended}"
+    #                 grib_file = fr"{file_begin_extended}_00{grib_file_end_extended}"
+    #             else:
+    #                 bz2_file = fr"{file_begin_extended}_0{bz2_file_end_extended}"
+    #                 grib_file = fr"{file_begin_extended}_0{grib_file_end_extended}"
+    #             url_to_bz2_file = fr"{url_to_icond2}/{time_stamp}/{field}/{bz2_file}"
+    #             path_to_file = os.path.join(path_to_field_folder, grib_file)
+    #             download_grib_file(url_to_bz2_file, path_to_field_folder)
+    #             extract_grib_file(os.path.join(path_to_field_folder, bz2_file))
+    #             dump_grib_data(path_to_file)
+
+    for field in fields:
         path_to_field_folder = os.path.join(dest_folder, time_stamp, field)
+        file_begin_extended = fr"{file_begin}{time_stamp}"
         for hour in range(number_of_hours + 1):
-            for flight_level in range(number_of_flight_levels):
-                file_begin_extended = fr"{file_begin}{today}{time_stamp}"
-                bz2_file_end_extended = fr"{hour}_{flight_level+1}_{field}{bz2_file_end}"
-                grib_file_end_extended = fr"{hour}_{flight_level+1}_{field}{grib_file_end}"
-                if hour < 10:
-                    bz2_file = fr"{file_begin_extended}_00{bz2_file_end_extended}"
-                    grib_file = fr"{file_begin_extended}_00{grib_file_end_extended}"
-                else:
-                    bz2_file = fr"{file_begin_extended}_0{bz2_file_end_extended}"
-                    grib_file = fr"{file_begin_extended}_0{grib_file_end_extended}"
-                url_to_bz2_file = fr"{url_to_icond2}/{time_stamp}/{field}/{bz2_file}"
-                path_to_file = os.path.join(path_to_field_folder, grib_file)
+            for flight_level in range(1, number_of_flight_levels+1):
+                # pylint: disable-next=line-too-long
+                bz2_file = fr"{file_begin_extended}_0{hour:02d}_{flight_level}_{field}{bz2_file_end}"
+                # pylint: disable-next=line-too-long
+                grib_file = fr"{file_begin_extended}_0{hour:02d}_{flight_level}_{field}{grib_file_end}"
+                url_to_bz2_file = fr"{url_to_icond2}/{latest_hour}/{field}/{bz2_file}"
+                print(grib_file)
+                continue
                 download_grib_file(url_to_bz2_file, path_to_field_folder)
                 extract_grib_file(os.path.join(path_to_field_folder, bz2_file))
-                dump_grib_data(path_to_file)
+                dump_grib_data(os.path.join(path_to_field_folder, grib_file))
         # delete_grib_files(path_to_field_folder)
 
 
@@ -123,13 +147,12 @@ def dump_grib_data(path_to_file: str) -> None:
     Args:
         path_to_file (str): path to file (with the file name at the end)
     """
-    # file_name = os.path.basename(os.path.normpath(path_to_file))
     grib_stdout = subprocess.run(["grib_dump", "-j", path_to_file],
                                  capture_output=True, text=True, check=True)
     json_dict = json.loads(grib_stdout.stdout)
     json_dict = optimize_json(json_dict)
 
-    path_to_json = f"{path_to_file[:-5]}.json"
+    path_to_json = f"{path_to_file[:-6]}.json"
     with open(path_to_json, "w", encoding="utf8") as json_file:
         json.dump(json_dict, json_file, indent=4)
 
@@ -160,11 +183,13 @@ def optimize_json(json_dict: dict) -> dict:
 
 def main():
     """For testing and debugging purposes"""
-    path_to_model = os.path.join(os.path.expanduser("~"),
-                                 "Dokumente", "_TU", "Bachelor", "DWD", "icon-d2")
+    # path_to_model = os.path.join(os.path.expanduser("~"),
+    #                              "Dokumente", "_TU", "Bachelor", "DWD", "icon-d2")
     path_to_model = os.path.join(r"/media/sf_icon-d2")
     number_of_hours = 2
-    provide_database(path_to_model, number_of_hours=number_of_hours)
+    number_of_flight_levels = 29
+    provide_database(path_to_model, number_of_hours=number_of_hours,
+                     number_of_flight_levels=number_of_flight_levels)
 
 
 if __name__ == "__main__":
