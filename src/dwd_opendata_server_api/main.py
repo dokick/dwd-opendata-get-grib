@@ -33,10 +33,11 @@ Pressure levels (hPa): 200, 250, 300, 400, 500, 600, 700, 850, 950, 975, 1000
 import json
 import os.path
 import subprocess
-from itertools import product
 from os import fsync, makedirs
 from time import localtime
 
+import numpy as np
+import pandas as pd
 import requests
 
 
@@ -65,70 +66,6 @@ def download_grib_file(url: str, dest_folder: str) -> None:
                     fsync(grib_file.fileno())
     else:  # HTTP status code 4XX/5XX
         print(f"Download failed: status code {req.status_code}\n{req.text}")
-
-
-def provide_database(dest_folder: str, *, number_of_hours: int = 48,
-                                          number_of_flight_levels: int = 65) -> None:
-    """Downloads a whole day from the OpenData DWD Server
-
-    Args:
-        dest_folder (str): destination of the directory
-        number_of_hours (int, optional): number of desired hours. Defaults to 48.
-        number_of_flight_levels (int, optional): number of desired flight levels. Defaults to 65.
-    """
-    url_to_icond2 = r"http://opendata.dwd.de/weather/nwp/icon-d2/grib"
-    # models = ("icosahedral_model-level", "icosahedral_pressure_level",
-            #   "regular-lat-lon_model-level", "regular-lat-lon_pressure-level")
-    model  = "regular-lat-lon_model-level"
-    # time_stamps = ("00", "03", "06", "09", "12", "15", "18", "21")
-    fields = ("u", "v", "w")
-
-    year, month, day, hour, *useless = localtime()
-    latest_hour = hour - hour % 3
-    time_stamp = f"{year}{month:02d}{day:02d}{latest_hour}"
-
-    if not os.path.exists(os.path.join(dest_folder, time_stamp)):
-        makedirs(os.path.join(dest_folder, time_stamp))
-
-    file_begin = fr"icon-d2_germany_{model}_"
-    bz2_file_end = r".grib2.bz2"
-    grib_file_end = r".grib2"
-
-    # for time_stamp, field in product(time_stamps, fields):
-    #     path_to_field_folder = os.path.join(dest_folder, time_stamp, field)
-    #     file_begin_extended = fr"{file_begin}{time_stamp}"
-    #     for hour in range(number_of_hours + 1):
-    #         for flight_level in range(1, number_of_flight_levels+1):
-    #             bz2_file_end_extended = fr"{hour}_{flight_level}_{field}{bz2_file_end}"
-    #             grib_file_end_extended = fr"{hour}_{flight_level}_{field}{grib_file_end}"
-    #             if hour < 10:
-    #                 bz2_file = fr"{file_begin_extended}_00{bz2_file_end_extended}"
-    #                 grib_file = fr"{file_begin_extended}_00{grib_file_end_extended}"
-    #             else:
-    #                 bz2_file = fr"{file_begin_extended}_0{bz2_file_end_extended}"
-    #                 grib_file = fr"{file_begin_extended}_0{grib_file_end_extended}"
-    #             url_to_bz2_file = fr"{url_to_icond2}/{time_stamp}/{field}/{bz2_file}"
-    #             path_to_file = os.path.join(path_to_field_folder, grib_file)
-    #             download_grib_file(url_to_bz2_file, path_to_field_folder)
-    #             extract_grib_file(os.path.join(path_to_field_folder, bz2_file))
-    #             dump_grib_data(path_to_file)
-
-    for field in fields:
-        path_to_field_folder = os.path.join(dest_folder, time_stamp, field)
-        file_begin_extended = fr"{file_begin}{time_stamp}"
-        for hour in range(number_of_hours + 1):
-            for flight_level in range(1, number_of_flight_levels+1):
-                # pylint: disable-next=line-too-long
-                bz2_file = fr"{file_begin_extended}_0{hour:02d}_{flight_level}_{field}{bz2_file_end}"
-                # pylint: disable-next=line-too-long
-                grib_file = fr"{file_begin_extended}_0{hour:02d}_{flight_level}_{field}{grib_file_end}"
-                url_to_bz2_file = fr"{url_to_icond2}/{latest_hour}/{field}/{bz2_file}"
-                print(grib_file)
-                continue
-                download_grib_file(url_to_bz2_file, path_to_field_folder)
-                extract_grib_file(os.path.join(path_to_field_folder, bz2_file))
-                dump_grib_data(os.path.join(path_to_field_folder, grib_file))
-        # delete_grib_files(path_to_field_folder)
 
 
 def extract_grib_file(path_to_grib_file: str) -> None:
@@ -167,6 +104,43 @@ def delete_grib_files(dest_folder: str) -> None:
     subprocess.run(["rm", path_with_grib_ending], check=True, )
 
 
+def json_to_csv(path_to_json_file: str) -> None:
+    """Overwrites json to csv
+
+    Args:
+        path_to_json_file (str): path to json file
+    """
+    with open(path_to_json_file, "r", encoding="utf8") as json_file:
+        json_dict = json.load(json_file)
+        new_json_dict = {key: val for key, val in json_dict.items() if key != "values"}
+        values = np.array(json_dict["values"])
+    number_longitude_points = new_json_dict["Ni"]
+    number_latitude_points = new_json_dict["Nj"]
+    start_longitude = new_json_dict["longitudeOfFirstGridPointInDegrees"] * 100
+    end_longitude = new_json_dict["longitudeOfLastGridPointInDegrees"] * 100
+    start_latitude = new_json_dict["latitudeOfFirstGridPointInDegrees"] * 100
+    end_latitude = new_json_dict["latitudeOfLastGridPointInDegrees"] * 100
+    step = new_json_dict["iDirectionIncrementInDegrees"] * 100
+    df_idx = np.arange(start_latitude, end_latitude+step, step)
+    df_idx = df_idx / 100
+
+    if start_longitude > end_longitude:
+        df_cols_1 = np.arange(start_longitude, 36000, step)
+        df_cols_2 = np.arange(0, end_longitude+step, step)
+        df_cols = np.concatenate((df_cols_1, df_cols_2))
+    else:
+        df_cols = np.arange(start_longitude, end_longitude, step)
+    df_cols = df_cols / 100
+    df = pd.DataFrame(values.reshape(number_latitude_points, number_longitude_points),
+                      index=df_idx, columns=df_cols)
+
+    with open(path_to_json_file, "w", encoding="utf8") as json_file:
+        json.dump(new_json_dict, json_file, indent=4)
+
+    with open(fr"{path_to_json_file[:-5]}.csv", "w", encoding="utf8") as csv_file:
+        df.to_csv(csv_file, sep=";")
+
+
 def optimize_json(json_dict: dict) -> dict:
     """Optimize json format from DWD server
 
@@ -181,11 +155,59 @@ def optimize_json(json_dict: dict) -> dict:
     return {json_obj[i]["key"]: json_obj[i]["value"] for i in range(amount_of_messages)}
 
 
+def provide_database(dest_folder: str,
+                     *,
+                     number_of_hours: int = 48,
+                     number_of_flight_levels: int = 65
+                     ) -> None:
+    """Downloads a whole day from the OpenData DWD Server
+    
+    Uses the regular LAT-LON model
+
+    Args:
+        dest_folder (str): destination of the directory
+        number_of_hours (int, optional): number of desired hours. Defaults to 48.
+        number_of_flight_levels (int, optional): number of desired flight levels. Defaults to 65.
+    """
+    url_to_icond2 = r"http://opendata.dwd.de/weather/nwp/icon-d2/grib"
+    model  = "regular-lat-lon_model-level"
+    fields = "u", "v", "w"
+
+    year, month, day, hour, *useless = localtime()
+    latest_hour = hour - hour % 3 - 3  # -3 because the latest hour might not be uploaded
+    time_stamp = f"{year}{month:02d}{day:02d}{latest_hour}"
+
+    if not os.path.exists(os.path.join(dest_folder, time_stamp)):
+        for field in fields:
+            makedirs(os.path.join(dest_folder, time_stamp, field))
+
+    file_begin = fr"icon-d2_germany_{model}_"
+    bz2_file_end = r".grib2.bz2"
+    grib_file_end = r".grib2"
+    json_file_end = r".json"
+
+    for field in fields:
+        path_to_field_folder = os.path.join(dest_folder, time_stamp, field)
+        file_begin_extended = fr"{file_begin}{time_stamp}"
+        for hour in range(number_of_hours + 1):
+            for flight_level in range(1, number_of_flight_levels+1):
+                # pylint: disable-next=line-too-long
+                bz2_file = fr"{file_begin_extended}_0{hour:02d}_{flight_level}_{field}{bz2_file_end}"
+                # pylint: disable-next=line-too-long
+                grib_file = fr"{file_begin_extended}_0{hour:02d}_{flight_level}_{field}{grib_file_end}"
+                url_to_bz2_file = fr"{url_to_icond2}/{latest_hour}/{field}/{bz2_file}"
+                print(grib_file)
+                download_grib_file(url_to_bz2_file, path_to_field_folder)
+                extract_grib_file(os.path.join(path_to_field_folder, bz2_file))
+                dump_grib_data(os.path.join(path_to_field_folder, grib_file))
+                json_file = fr"{file_begin_extended}_0{hour:02d}_{flight_level}_{field}{json_file_end}"
+                json_to_csv(os.path.join(path_to_field_folder, json_file))
+        # delete_grib_files(path_to_field_folder)
+
 def main():
     """For testing and debugging purposes"""
-    # path_to_model = os.path.join(os.path.expanduser("~"),
-    #                              "Dokumente", "_TU", "Bachelor", "DWD", "icon-d2")
-    path_to_model = os.path.join(r"/media/sf_icon-d2")
+    path_to_model = os.path.join(r"/media/sf_Ubuntu_18.04.6/sf_icon-d2")
+    # path_to_model = os.path.join(r"/media", r"sf_Ubuntu_18.04.6", r"sf_icon-d2")
     number_of_hours = 2
     number_of_flight_levels = 29
     provide_database(path_to_model, number_of_hours=number_of_hours,
