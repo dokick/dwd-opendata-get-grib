@@ -68,7 +68,7 @@ async def download_url_list(url_list: list[str], dest_folder: Path, *, limit: in
         await asyncio.gather(*tasks)
 
 
-def download(url: str, dest_folder: Path) -> None:
+def download_legacy(url: str, dest_folder: Path) -> None:
     """Downloads the grib file
 
     :param str url: url with the file at the ending
@@ -202,7 +202,7 @@ def provide_database(
         path_to_field_folder = dest_folder / time_stamp / field
         for hour in range(number_of_hours + 1):
             for flight_level in range(*flight_levels):
-                bz2_file = fr"{file_begin}_0{hour:02d}_{flight_level}_{field}{BZ2}"  # pylint: disable=line-too-long
+                bz2_file = fr"{file_begin}_0{hour:02d}_{flight_level}_{field}{BZ2}"
                 url_to_bz2_file = fr"{ICOND2URL}/{latest_hour:02d}/{field}/{bz2_file}"
                 urls[field].append(url_to_bz2_file)
         asyncio.run(download_url_list(urls[field], path_to_field_folder))
@@ -211,15 +211,11 @@ def provide_database(
         path_to_field_folder = dest_folder / time_stamp / field
         for hour in range(number_of_hours + 1):
             for flight_level in range(*flight_levels):
-                bz2_file = fr"{file_begin}_0{hour:02d}_{flight_level}_{field}{BZ2}"  # pylint: disable=line-too-long
-                grib_file = fr"{file_begin}_0{hour:02d}_{flight_level}_{field}{GRIB2}"  # pylint: disable=line-too-long
-                # url_to_bz2_file = fr"{ICOND2URL}/{latest_hour:02d}/{field}/{bz2_file}"
+                bz2_file = fr"{file_begin}_0{hour:02d}_{flight_level}_{field}{BZ2}"
+                grib_file = fr"{file_begin}_0{hour:02d}_{flight_level}_{field}{GRIB2}"
                 print(grib_file)
-                # continue
-                # download(url_to_bz2_file, path_to_field_folder)
                 extract_grib_file(path_to_field_folder / bz2_file)
                 dump_grib_data(path_to_field_folder / grib_file)
-                # pylint: disable-next=line-too-long
                 json_file = fr"{file_begin}_0{hour:02d}_{flight_level}_{field}{JSON}"
                 json_to_csv(path_to_field_folder / json_file)
         delete_grib_files(path_to_field_folder)
