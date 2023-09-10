@@ -1,8 +1,4 @@
-"""
-This module downloads the grib file from the opendata server and extracts the data
-
-Pressure levels (hPa): 200, 250, 300, 400, 500, 600, 700, 850, 950, 975, 1000
-"""
+"""This module downloads the grib file from the opendata server and extracts the data"""
 
 import argparse
 import asyncio
