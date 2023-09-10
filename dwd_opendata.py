@@ -4,25 +4,30 @@ This module downloads the grib file from the opendata server and extracts the da
 Pressure levels (hPa): 200, 250, 300, 400, 500, 600, 700, 850, 950, 975, 1000
 """
 
+import argparse
 import asyncio
+import bz2
 import json
+import os
 import subprocess
-from os import fsync
+# from os import fsync
 from pathlib import Path
 from time import localtime
+from typing import TypeAlias, Union
 
 import httpx
 import numpy as np
 import pandas as pd
-import requests
+# import requests
 
+PathLike: TypeAlias = Union[str, bytes, os.PathLike, Path]
 
-BZ2 = r".grib2.bz2"
+BZ2 = r".bz2"
 FIELDS = "u", "v", "w"
 GRIB2 = r".grib2"
 JSON = r".json"
 MODEL = r"regular-lat-lon_model-level"
-ICOND2URL = r"http://opendata.dwd.de/weather/nwp/icon-d2/grib"
+ICOND2_URL = r"https://opendata.dwd.de/weather/nwp/icon-d2/grib"
 
 
 async def download_single_file(
@@ -46,13 +51,13 @@ async def download_single_file(
             async with client.stream("GET", url) as response:
                 filename = url.split('/')[-1].replace(" ", "_")  # be careful with file names
                 file_path = dest_folder / filename
-                with open(file_path, "wb") as f:  # pylint: disable=invalid-name
+                with open(file_path, "wb") as f:
                     async for chunk in response.aiter_bytes():
                         f.write(chunk)
                         # f.flush()
                         # fsync(f.fileno())
         except httpx.HTTPError as exc:
-            print(f"HTTP error occured: {exc}")
+            print(f"HTTP error occurred: {exc}")
 
 
 async def download_url_list(url_list: list[str], dest_folder: Path, *, limit: int = 10) -> None:
@@ -64,57 +69,63 @@ async def download_url_list(url_list: list[str], dest_folder: Path, *, limit: in
     """
     async with httpx.AsyncClient() as client:
         semaphore = asyncio.Semaphore(limit)
-        tasks = [asyncio.ensure_future(download_single_file(client, semaphore, url, dest_folder)) for url in url_list]  # pylint: disable=line-too-long
+        tasks = [asyncio.ensure_future(download_single_file(client, semaphore, url, dest_folder)) for url in url_list]
         await asyncio.gather(*tasks)
 
 
-def download_legacy(url: str, dest_folder: Path) -> None:
-    """Downloads the grib file
-
-    :param str url: url with the file at the ending
-    :param Path dest_folder: dir where file should be saved
-    :raises FileNotFoundError: if dest_folder doesn't exist
-    """
-    if not dest_folder.exists():
-        raise FileNotFoundError(f"dir \"{dest_folder}\" doesn't exist; not automatically created")
-
-    filename = url.split('/')[-1].replace(" ", "_")  # be careful with file names
-    file_path = dest_folder / filename
-
-    req = requests.get(url, stream=True, timeout=30)
-    if req.ok:
-        print("saving to", Path.resolve(file_path))
-        with open(file_path, 'wb') as f:  # pylint: disable=invalid-name
-            for chunk in req.iter_content(chunk_size=1024 * 8):
-                if chunk:
-                    f.write(chunk)
-                    f.flush()
-                    fsync(f.fileno())
-    else:  # HTTP status code 4XX/5XX
-        print(f"Download failed: status code {req.status_code}\n{req.text}")
+# def download_legacy(url: str, dest_folder: Path) -> None:
+#     """Downloads the grib file
+#
+#     :param str url: url with the file at the ending
+#     :param Path dest_folder: dir where file should be saved
+#     :raises FileNotFoundError: if dest_folder doesn't exist
+#     """
+#     if not dest_folder.exists():
+#         raise FileNotFoundError(f"dir \"{dest_folder}\" doesn't exist; not automatically created")
+#
+#     filename = url.split('/')[-1].replace(" ", "_")  # be careful with file names
+#     file_path = dest_folder / filename
+#
+#     req = requests.get(url, stream=True, timeout=30)
+#     if req.ok:
+#         print("saving to", Path.resolve(file_path))
+#         with open(file_path, 'wb') as f:  # pylint: disable=invalid-name
+#             for chunk in req.iter_content(chunk_size=1024 * 8):
+#                 if chunk:
+#                     f.write(chunk)
+#                     f.flush()
+#                     fsync(f.fileno())
+#     else:  # HTTP status code 4XX/5XX
+#         print(f"Download failed: status code {req.status_code}\n{req.text}")
 
 
 def extract_grib_file(path_to_grib_file: Path) -> None:
-    """Grib data is downloaded in .bz2 files. Extractin is necessary
+    """Grib data is downloaded in .bz2 files. Extraction is necessary
 
-    :param Path path_to_grib_file: ~
+    :param Path path_to_grib_file: path to grib file
     """
-    if path_to_grib_file.exists():
-        subprocess.run(["bzip2", "-d", path_to_grib_file], check=True)
+    # decompressor = bz2.BZ2Decompressor()
+    # decompressor.decompress()
+    with open(path_to_grib_file, mode="rb") as compressed_stream:
+        decompressed_data = bz2.decompress(compressed_stream.read())
+    with open(path_to_grib_file.with_suffix(""), mode="wb") as decompressed_stream:
+        decompressed_stream.write(decompressed_data)
+    # if path_to_grib_file.exists():
+    #     subprocess.run(["bzip2", "-d", path_to_grib_file], check=True)
 
 
-def dump_grib_data(path_to_grib: Path) -> None:
+def dump_grib_data(path_to_grib_file: Path) -> None:
     """Dump grib data with eccodes functions
 
-    :param Path path_to_grib: ~
+    :param Path path_to_grib_file: path to grib
     """
     grib_stdout = subprocess.run(
-        ["grib_dump", "-j", str(path_to_grib)],
+        ["grib_dump", "-j", str(path_to_grib_file)],
         capture_output=True, text=True, check=True
     )
     json_dict = optimize_json(json.loads(grib_stdout.stdout))
 
-    with open(path_to_grib.with_suffix(".json"), "w", encoding="utf8") as json_file:
+    with open(path_to_grib_file.with_suffix(".json"), "w", encoding="utf8") as json_file:
         json.dump(json_dict, json_file, indent=4)
 
 
@@ -129,7 +140,7 @@ def delete_grib_files(dest_folder: Path) -> None:
 def json_to_csv(path_to_json: Path) -> None:
     """Overwrites json to csv
 
-    :param Path path_to_json_file: path to json file
+    :param Path path_to_json: path to json file
     """
     with open(path_to_json, "r", encoding="utf8") as json_file:
         json_dict = json.load(json_file)
@@ -202,8 +213,8 @@ def provide_database(
         path_to_field_folder = dest_folder / time_stamp / field
         for hour in range(number_of_hours + 1):
             for flight_level in range(*flight_levels):
-                bz2_file = fr"{file_begin}_0{hour:02d}_{flight_level}_{field}{BZ2}"
-                url_to_bz2_file = fr"{ICOND2URL}/{latest_hour:02d}/{field}/{bz2_file}"
+                bz2_file = fr"{file_begin}_0{hour:02d}_{flight_level}_{field}{GRIB2}{BZ2}"
+                url_to_bz2_file = fr"{ICOND2_URL}/{latest_hour:02d}/{field}/{bz2_file}"
                 urls[field].append(url_to_bz2_file)
         asyncio.run(download_url_list(urls[field], path_to_field_folder))
     # return
@@ -211,7 +222,7 @@ def provide_database(
         path_to_field_folder = dest_folder / time_stamp / field
         for hour in range(number_of_hours + 1):
             for flight_level in range(*flight_levels):
-                bz2_file = fr"{file_begin}_0{hour:02d}_{flight_level}_{field}{BZ2}"
+                bz2_file = fr"{file_begin}_0{hour:02d}_{flight_level}_{field}{GRIB2}{BZ2}"
                 grib_file = fr"{file_begin}_0{hour:02d}_{flight_level}_{field}{GRIB2}"
                 print(grib_file)
                 extract_grib_file(path_to_field_folder / bz2_file)
@@ -222,10 +233,31 @@ def provide_database(
 
 
 def main() -> None:
-    """For testing and debugging purposes"""
-    path_to_model = Path("/") / "media" / "sf_Ubuntu_18.04.6" / "sf_icon-d2"
-    number_of_hours = 2
-    flight_levels = 38, 66  # opendata.dwd.de uploads full levels, thus lowest flight level is 65
+    """Entry point for script"""
+    p = argparse.ArgumentParser()
+    p.add_argument("-o", "--output", required=True, help="Output directory of data")
+    p.add_argument("-n", "--hours", default=1, type=int, help="Number of hours that will be downloaded")
+    p.add_argument(
+        "--level",
+        nargs=2,
+        default=(38, 66),
+        help="Range of levels to include, left-side including, right-side excluding, refer to README to flight levels"
+    )
+    args = p.parse_args()
+
+    path_to_model = Path(args.output).resolve()
+    number_of_hours = args.hours
+    flight_levels = tuple(args.level)  # opendata.dwd.de uploads full levels, thus lowest flight level is 65
+
+    if number_of_hours > 48:
+        raise ValueError(f"Number of hours given exceeds 48: {number_of_hours}")
+    if number_of_hours < 0:
+        raise ValueError(f"Number of hours must be positive: {number_of_hours}")
+    if flight_levels[0] > flight_levels[1]:
+        raise ValueError(f"Starting flight level can't be greater than ending flight level: {flight_levels}")
+    if flight_levels[0] > 66 or flight_levels[1] > 66:
+        raise ValueError(f"Given flight levels exceed 66, but only 65 available: {flight_levels}")
+
     provide_database(
         path_to_model,
         number_of_hours=number_of_hours,
