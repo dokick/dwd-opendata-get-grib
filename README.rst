@@ -1,11 +1,18 @@
 DWD OpenData Server Functions
 =============================
 
+.. image:: https://img.shields.io/badge/linting-pylint-yellowgreen
+    :target: https://github.com/pylint-dev/pylint
+
+Introduction
+------------
+
 Functions to get grib data from the DWD OpenData Server and
 convert it to a format that is more readable and
 easier to access and perform Data Science on it.
 
-Full height levels:
+Full height levels
+------------------
 
 +-----------+----------+-----------+----------+-----------+----------+-----------+----------+
 |level idx. |height [m]|level idx. |height [m]|level idx. |height [m]|level idx. |height [m]|

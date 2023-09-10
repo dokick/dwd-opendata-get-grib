@@ -86,11 +86,11 @@ async def download_single_file(
             async with client.stream("GET", url) as response:
                 filename = url.split('/')[-1].replace(" ", "_")  # be careful with file names
                 file_path = dest_folder / filename
-                with open(file_path, "wb") as f:
+                with open(file_path, "wb") as stream:
                     async for chunk in response.aiter_bytes():
-                        f.write(chunk)
-                        # f.flush()
-                        # fsync(f.fileno())
+                        stream.write(chunk)
+                        # stream.flush()
+                        # fsync(stream.fileno())
         except httpx.HTTPError as exc:
             print(f"HTTP error occurred: {exc}")
 
@@ -168,7 +168,7 @@ def json_to_csv(path_to_json: Path) -> None:
     else:
         df_cols = np.arange(start_longitude, end_longitude, step) / 100
 
-    df = pd.DataFrame(
+    frame = pd.DataFrame(
         values.reshape(number_latitude_points, number_longitude_points),
         index=df_idx,
         columns=df_cols
@@ -178,7 +178,7 @@ def json_to_csv(path_to_json: Path) -> None:
         json.dump(new_json_dict, json_file, indent=4)
 
     with open(path_to_json.with_suffix(".csv"), "w", encoding="utf8") as csv_file:
-        df.to_csv(csv_file, sep=";")
+        frame.to_csv(csv_file, sep=";")
 
 
 def optimize_json(json_dict: dict) -> dict:
@@ -244,22 +244,22 @@ def provide_database(
 
 def main() -> None:
     """Entry point for script"""
-    p = argparse.ArgumentParser()
-    p.add_argument("-o", "--output", required=True, help="Output directory of data")
-    p.add_argument("-n", "--hours", default=1, type=int, help="Number of hours that will be downloaded")
-    p.add_argument(
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-o", "--output", required=True, help="Output directory of data")
+    parser.add_argument("-n", "--hours", default=1, type=int, help="Number of hours that will be downloaded")
+    parser.add_argument(
         "--level",
         nargs=2,
         default=(38, 66),
         help="Range of levels to include, left-side including, right-side excluding, refer to README to flight levels"
     )
-    p.add_argument(
+    parser.add_argument(
         "--latest",
         action="store_true",
         default=False,
         help="Latest hour or 3 hours before that"
     )
-    args = p.parse_args()
+    args = parser.parse_args()
 
     path_to_model = Path(args.output).resolve()
     number_of_hours = args.hours
