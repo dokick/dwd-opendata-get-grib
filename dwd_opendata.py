@@ -132,12 +132,13 @@ def get_grib_data(path_to_grib_file: PathLike) -> None:
         json.dump(grib_data, json_file, indent=4)
 
 
-def delete_grib_files(dest_folder: PathLike) -> None:
+def delete_files(dest_folder: PathLike, *, suffix: str = ".grib2") -> None:
     """Deletes left over grib files
 
     :param PathLike dest_folder: folder with grib files
+    :param str suffix: suffix of files to delete, defaults to ``".grib2"``
     """
-    for file in dest_folder.glob("*.grib2"):
+    for file in dest_folder.glob(suffix):
         file.unlink(missing_ok=True)
 
 
@@ -203,7 +204,7 @@ def provide_database(
     :param Path dest_folder: dir of the destination
     :param int number_of_hours: number of desired hours, defaults to 48
     :param tuple[int, int] flight_levels: desired flight levels, defaults to (1, 67)
-    :param bool latest:
+    :param bool latest: include latest data or not
     """
     year, month, day, hour, *_ = localtime()
     latest_hour = hour - hour % 3
@@ -238,7 +239,7 @@ def provide_database(
                 get_grib_data(path_to_field_folder / grib_file)
                 json_file = fr"{file_begin}_0{hour:02d}_{flight_level}_{field}{JSON}"
                 json_to_csv(path_to_field_folder / json_file)
-        delete_grib_files(path_to_field_folder)
+        delete_files(path_to_field_folder)
 
 
 def main() -> None:
