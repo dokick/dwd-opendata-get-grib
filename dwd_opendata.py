@@ -5,11 +5,12 @@ import asyncio
 import bz2
 import json
 import os
+import subprocess
 from pathlib import Path
 from time import localtime
 from typing import TypeAlias, Union
 
-import eccodes
+# import eccodes
 import httpx
 import numpy as np
 import pandas as pd
@@ -120,10 +121,17 @@ def get_grib_data(path_to_grib_file: PathLike) -> None:
 
     :param PathLike path_to_grib_file: path to grib file
     """
-    with eccodes.FileReader(path_to_grib_file) as reader:
-        message = next(reader)
-        grib_data = {field_name: message.get(field_name) for field_name in GRIB_FIELDS if field_name != "values"}
-        grib_data["values"] = list(message.get("values"))
+    # with eccodes.FileReader(path_to_grib_file) as reader:
+    #     message = next(reader)
+    #     grib_data = {field_name: message.get(field_name) for field_name in GRIB_FIELDS if field_name != "values"}
+    #     grib_data["values"] = list(message.get("values"))
+    grib_stdout = subprocess.run(
+        ["grib_dump", "-j", str(path_to_grib_file)],
+        capture_output=True,
+        text=True,
+        check=True
+    )
+    grib_data = optimize_json(json.loads(grib_stdout.stdout))
     with open(Path(path_to_grib_file).with_suffix(".json"), "w", encoding="utf-8") as json_file:
         json.dump(grib_data, json_file, indent=4)
 
