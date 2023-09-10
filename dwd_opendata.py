@@ -9,16 +9,14 @@ import asyncio
 import bz2
 import json
 import os
-import subprocess
-# from os import fsync
 from pathlib import Path
 from time import localtime
 from typing import TypeAlias, Union
 
+import eccodes
 import httpx
 import numpy as np
 import pandas as pd
-# import requests
 
 PathLike: TypeAlias = Union[str, bytes, os.PathLike, Path]
 
@@ -28,20 +26,57 @@ GRIB2 = r".grib2"
 JSON = r".json"
 MODEL = r"regular-lat-lon_model-level"
 ICOND2_URL = r"https://opendata.dwd.de/weather/nwp/icon-d2/grib"
+GRIB_FIELDS = (
+    "values",
+    "dataDate",
+    "dataTime",
+    "numberOfDataPoints",
+    "Ni",
+    "Nj",
+    "latitudeOfFirstGridPointInDegrees",
+    "longitudeOfFirstGridPointInDegrees",
+    "latitudeOfLastGridPointInDegrees",
+    "longitudeOfLastGridPointInDegrees",
+    "iDirectionIncrementInDegrees",
+    "jDirectionIncrementInDegrees",
+    "gridType",
+    "parameterUnits",
+    "parameterName",
+    "shortNameECMF",
+    "shortName",
+    "nameECMF",
+    "name",
+    "cfNameLegacyECMF",
+    "cfNameECMF",
+    "cfName",
+    "cfVarNameLegacyECMF",
+    "cfVarNameECMF",
+    "cfVarName",
+    "numberOfValues",
+    "packingType",
+    "maximum",
+    "minimum",
+    "average",
+    "numberOfMissing",
+    "standardDeviation",
+    "skewness",
+    "kurtosis",
+    "getNumberOfValues"
+)
 
 
 async def download_single_file(
         client: httpx.AsyncClient,
         semaphore: asyncio.Semaphore,
         url: str,
-        dest_folder: Path) -> None:
+        dest_folder: PathLike) -> None:
     """Downloads single file sing the given httpx client and semaphore to limit connections.
 
     :param httpx.AsyncClient client: httpx.ASyncClient
     :param asyncio.Semaphore semaphore: asyncio.Semaphore
     :param str url: url with the file at the ending
-    :param Path dest_folder: dir where file should be saved
-    :raises FileNotFoundError: if dest_folder doesn't exist
+    :param PathLike dest_folder: dir where file should be saved
+    :raises FileNotFoundError: if ``dest_folder`` doesn't exist
     """
     if not dest_folder.exists():
         raise FileNotFoundError(f"dir \"{dest_folder}\" doesn't exist; not automatically created")
@@ -60,11 +95,11 @@ async def download_single_file(
             print(f"HTTP error occurred: {exc}")
 
 
-async def download_url_list(url_list: list[str], dest_folder: Path, *, limit: int = 10) -> None:
+async def download_url_list(url_list: list[str], dest_folder: PathLike, *, limit: int = 10) -> None:
     """Download files from a list of URLs with a limit on the number of concurrent connections.
 
     :param list[str] url_list: list of urls
-    :param Path dest_folder: dir of destination
+    :param PathLike dest_folder: dir of destination
     :param int limit: limit of parallel connections, defaults to 10
     """
     async with httpx.AsyncClient() as client:
@@ -73,68 +108,37 @@ async def download_url_list(url_list: list[str], dest_folder: Path, *, limit: in
         await asyncio.gather(*tasks)
 
 
-# def download_legacy(url: str, dest_folder: Path) -> None:
-#     """Downloads the grib file
-#
-#     :param str url: url with the file at the ending
-#     :param Path dest_folder: dir where file should be saved
-#     :raises FileNotFoundError: if dest_folder doesn't exist
-#     """
-#     if not dest_folder.exists():
-#         raise FileNotFoundError(f"dir \"{dest_folder}\" doesn't exist; not automatically created")
-#
-#     filename = url.split('/')[-1].replace(" ", "_")  # be careful with file names
-#     file_path = dest_folder / filename
-#
-#     req = requests.get(url, stream=True, timeout=30)
-#     if req.ok:
-#         print("saving to", Path.resolve(file_path))
-#         with open(file_path, 'wb') as f:  # pylint: disable=invalid-name
-#             for chunk in req.iter_content(chunk_size=1024 * 8):
-#                 if chunk:
-#                     f.write(chunk)
-#                     f.flush()
-#                     fsync(f.fileno())
-#     else:  # HTTP status code 4XX/5XX
-#         print(f"Download failed: status code {req.status_code}\n{req.text}")
-
-
-def extract_grib_file(path_to_grib_file: Path) -> None:
+def extract_grib_file(path_to_grib_file: PathLike) -> None:
     """Grib data is downloaded in .bz2 files. Extraction is necessary
 
-    :param Path path_to_grib_file: path to grib file
+    :param PathLike path_to_grib_file: path to grib file
     """
-    # decompressor = bz2.BZ2Decompressor()
-    # decompressor.decompress()
     with open(path_to_grib_file, mode="rb") as compressed_stream:
         decompressed_data = bz2.decompress(compressed_stream.read())
     with open(path_to_grib_file.with_suffix(""), mode="wb") as decompressed_stream:
         decompressed_stream.write(decompressed_data)
-    # if path_to_grib_file.exists():
-    #     subprocess.run(["bzip2", "-d", path_to_grib_file], check=True)
 
 
-def dump_grib_data(path_to_grib_file: Path) -> None:
+def get_grib_data(path_to_grib_file: PathLike) -> None:
     """Dump grib data with eccodes functions
 
-    :param Path path_to_grib_file: path to grib
+    :param PathLike path_to_grib_file: path to grib file
     """
-    grib_stdout = subprocess.run(
-        ["grib_dump", "-j", str(path_to_grib_file)],
-        capture_output=True, text=True, check=True
-    )
-    json_dict = optimize_json(json.loads(grib_stdout.stdout))
-
-    with open(path_to_grib_file.with_suffix(".json"), "w", encoding="utf8") as json_file:
-        json.dump(json_dict, json_file, indent=4)
+    with eccodes.FileReader(path_to_grib_file) as reader:
+        message = next(reader)
+        grib_data = {field_name: message.get(field_name) for field_name in GRIB_FIELDS if field_name != "values"}
+        grib_data["values"] = list(message.get("values"))
+    with open(Path(path_to_grib_file).with_suffix(".json"), "w", encoding="utf-8") as json_file:
+        json.dump(grib_data, json_file, indent=4)
 
 
-def delete_grib_files(dest_folder: Path) -> None:
+def delete_grib_files(dest_folder: PathLike) -> None:
     """Deletes left over grib files
 
-    :param Path dest_folder: folder with grib files
+    :param PathLike dest_folder: folder with grib files
     """
-    subprocess.run(["rm", str(dest_folder / "*.grib2")], check=True)
+    for file in dest_folder.glob("*.grib2"):
+        file.unlink(missing_ok=True)
 
 
 def json_to_csv(path_to_json: Path) -> None:
@@ -191,15 +195,20 @@ def provide_database(
         dest_folder: Path,
         *,
         number_of_hours: int = 48,
-        flight_levels: tuple[int, int] = (1, 67)) -> None:
+        flight_levels: tuple[int, int] = (1, 67),
+        latest: bool = False
+) -> None:
     """Downloads the specified time from the OpenData DWD Server
 
     :param Path dest_folder: dir of the destination
     :param int number_of_hours: number of desired hours, defaults to 48
     :param tuple[int, int] flight_levels: desired flight levels, defaults to (1, 67)
+    :param bool latest:
     """
     year, month, day, hour, *_ = localtime()
-    latest_hour = hour - hour % 3 - 3  # -3 because the latest hour might not be uploaded
+    latest_hour = hour - hour % 3
+    if not latest:
+        latest_hour -= 3  # -3 because the latest hour might not be uploaded
     time_stamp = f"{year}{month:02d}{day:02d}{latest_hour:02d}"
 
     for field in FIELDS:
@@ -226,7 +235,7 @@ def provide_database(
                 grib_file = fr"{file_begin}_0{hour:02d}_{flight_level}_{field}{GRIB2}"
                 print(grib_file)
                 extract_grib_file(path_to_field_folder / bz2_file)
-                dump_grib_data(path_to_field_folder / grib_file)
+                get_grib_data(path_to_field_folder / grib_file)
                 json_file = fr"{file_begin}_0{hour:02d}_{flight_level}_{field}{JSON}"
                 json_to_csv(path_to_field_folder / json_file)
         delete_grib_files(path_to_field_folder)
@@ -242,6 +251,12 @@ def main() -> None:
         nargs=2,
         default=(38, 66),
         help="Range of levels to include, left-side including, right-side excluding, refer to README to flight levels"
+    )
+    p.add_argument(
+        "--latest",
+        action="store_true",
+        default=False,
+        help="Latest hour or 3 hours before that"
     )
     args = p.parse_args()
 
