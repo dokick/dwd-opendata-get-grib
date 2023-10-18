@@ -1,11 +1,11 @@
 """This module downloads the grib file from the opendata server and extracts the data"""
 
-import argparse
 import asyncio
 import bz2
 import json
 import os
 import subprocess
+from argparse import ArgumentParser
 from pathlib import Path
 from time import localtime
 from typing import TypeAlias, Union
@@ -60,6 +60,10 @@ GRIB_FIELDS = (
     "kurtosis",
     "getNumberOfValues"
 )
+INDEX_FOR_47_DEG_LAT = 191
+INDEX_FOR_54p98_LAT = 591
+INDEX_FOR_5_DEG_LON = 447
+INDEX_FOR_14p98_DEG_LON = 947
 
 
 async def download_single_file(
@@ -116,10 +120,10 @@ def extract_grib_file(path_to_grib_file: PathLike) -> None:
         decompressed_stream.write(decompressed_data)
 
 
-def get_grib_data(path_to_grib_file: PathLike) -> None:
+def get_grib_data(path_to_grib_file: Path) -> None:
     """Dump grib data with eccodes functions
 
-    :param PathLike path_to_grib_file: path to grib file
+    :param Path path_to_grib_file: path to grib file
     """
     # with eccodes.FileReader(path_to_grib_file) as reader:
     #     message = next(reader)
@@ -132,15 +136,15 @@ def get_grib_data(path_to_grib_file: PathLike) -> None:
         check=True
     )
     grib_data = optimize_json(json.loads(grib_stdout.stdout))
-    with open(Path(path_to_grib_file).with_suffix(".json"), "w", encoding="utf-8") as json_file:
-        json.dump(grib_data, json_file, indent=4)
+    with open(path_to_grib_file.with_suffix(".json"), "w", encoding="utf-8") as json_stream:
+        json.dump(grib_data, json_stream, indent=4)
 
 
-def delete_files(dest_folder: PathLike, *, suffix: str = ".grib2") -> None:
+def delete_files(dest_folder: Path, *, suffix: str = ".grib2") -> None:
     """Deletes left over grib files
 
-    :param PathLike dest_folder: folder with grib files
-    :param str suffix: suffix of files to delete, defaults to ``".grib2"``
+    :param Path dest_folder: folder with grib files
+    :param str suffix: suffix of files to delete, defaults to ``.grib2``
     """
     for file in dest_folder.glob(suffix):
         file.unlink(missing_ok=True)
@@ -151,10 +155,10 @@ def json_to_csv(path_to_json: Path) -> None:
 
     :param Path path_to_json: path to json file
     """
-    with open(path_to_json, "r", encoding="utf8") as json_file:
-        json_dict = json.load(json_file)
+    with open(path_to_json, "r", encoding="utf-8") as json_stream:
+        json_dict = json.load(json_stream)
         new_json_dict = {key: val for key, val in json_dict.items() if key != "values"}
-        values = np.array(json_dict["values"])
+        values = np.array(json_dict["values"], dtype=np.float64)
 
     number_longitude_points = new_json_dict["Ni"]
     number_latitude_points = new_json_dict["Nj"]
@@ -172,17 +176,21 @@ def json_to_csv(path_to_json: Path) -> None:
     else:
         df_cols = np.arange(start_longitude, end_longitude, step) / 100
 
-    frame = pd.DataFrame(
-        values.reshape(number_latitude_points, number_longitude_points),
-        index=df_idx,
-        columns=df_cols
-    )
+    data_matrix = values.reshape(number_latitude_points, number_longitude_points)
 
-    with open(path_to_json, "w", encoding="utf8") as json_file:
-        json.dump(new_json_dict, json_file, indent=4)
+    frame = pd.DataFrame(data_matrix, index=df_idx, columns=df_cols)
 
-    with open(path_to_json.with_suffix(".csv"), "w", encoding="utf8") as csv_file:
-        frame.to_csv(csv_file, sep=";")
+    with open(path_to_json, "w", encoding="utf8") as json_stream:
+        json.dump(new_json_dict, json_stream, indent=4)
+
+    with open(path_to_json.with_suffix(".csv"), "w", encoding="utf-8") as csv_stream:
+        frame.to_csv(csv_stream, sep=";", lineterminator="\n")
+
+    only_germany = data_matrix[INDEX_FOR_47_DEG_LAT:INDEX_FOR_54p98_LAT, INDEX_FOR_5_DEG_LON:INDEX_FOR_14p98_DEG_LON]
+    with open(path_to_json.with_suffix(".bin"), "wb") as binary_stream:
+        for column in only_germany.T:
+            for val in column:
+                binary_stream.write(bytes(val))
 
 
 def optimize_json(json_dict: dict) -> dict:
@@ -196,18 +204,18 @@ def optimize_json(json_dict: dict) -> dict:
     return {json_obj[i]["key"]: json_obj[i]["value"] for i in range(amount_of_messages)}
 
 
-def provide_database(
+def get_wind_data(
         dest_folder: Path,
         *,
-        number_of_hours: int = 48,
+        range_of_hours: tuple[int, int] = (0, 48),
         flight_levels: tuple[int, int] = (1, 67),
         latest: bool = False
 ) -> None:
     """Downloads the specified time from the OpenData DWD Server
 
     :param Path dest_folder: dir of the destination
-    :param int number_of_hours: number of desired hours, defaults to 48
-    :param tuple[int, int] flight_levels: desired flight levels, defaults to (1, 67)
+    :param tuple[int, int] range_of_hours: range of desired hours, defaults to ``(0, 48)``
+    :param tuple[int, int] flight_levels: desired flight levels, defaults to ``(1, 67)``
     :param bool latest: include latest data or not
     """
     year, month, day, hour, *_ = localtime()
@@ -223,9 +231,10 @@ def provide_database(
 
     urls = {field: [] for field in FIELDS}
 
+    hour_start, hour_stop = range_of_hours
     for field in FIELDS:
         path_to_field_folder = dest_folder / time_stamp / field
-        for hour in range(number_of_hours + 1):
+        for hour in range(hour_start, hour_stop + 1):
             for flight_level in range(*flight_levels):
                 bz2_file = fr"{file_begin}_0{hour:02d}_{flight_level}_{field}{GRIB2}{BZ2}"
                 url_to_bz2_file = fr"{ICOND2_URL}/{latest_hour:02d}/{field}/{bz2_file}"
@@ -234,7 +243,7 @@ def provide_database(
     # return
     for field in FIELDS:
         path_to_field_folder = dest_folder / time_stamp / field
-        for hour in range(number_of_hours + 1):
+        for hour in range(hour_start, hour_stop + 1):
             for flight_level in range(*flight_levels):
                 bz2_file = fr"{file_begin}_0{hour:02d}_{flight_level}_{field}{GRIB2}{BZ2}"
                 grib_file = fr"{file_begin}_0{hour:02d}_{flight_level}_{field}{GRIB2}"
@@ -248,9 +257,15 @@ def provide_database(
 
 def main() -> None:
     """Entry point for script"""
-    parser = argparse.ArgumentParser()
+    parser = ArgumentParser()
     parser.add_argument("-o", "--output", required=True, help="Output directory of data")
-    parser.add_argument("-n", "--hours", default=1, type=int, help="Number of hours that will be downloaded")
+    parser.add_argument(
+        "-n",
+        "--hours",
+        nargs=2,
+        default=(0, 0),
+        help="Range of hours that will be downloaded, including right side"
+    )
     parser.add_argument(
         "--level",
         nargs=2,
@@ -266,23 +281,21 @@ def main() -> None:
     args = parser.parse_args()
 
     path_to_model = Path(args.output).resolve()
-    number_of_hours = args.hours
+    range_of_hours = int(args.hours[0]), int(args.hours[1])
     flight_levels = tuple(args.level)  # opendata.dwd.de uploads full levels, thus lowest flight level is 65
 
-    if number_of_hours > 48:
-        raise ValueError(f"Number of hours given exceeds 48: {number_of_hours}")
-    if number_of_hours < 0:
-        raise ValueError(f"Number of hours must be positive: {number_of_hours}")
+    if range_of_hours[1] < range_of_hours[0]:
+        raise ValueError(f"Range of hours must be in order: {range_of_hours}")
+    if range_of_hours[1] > 48:
+        raise ValueError(f"Range of hours given exceeds 48: {range_of_hours[1]}")
+    if range_of_hours[0] < 0:
+        raise ValueError(f"Range of hours must be positive: {range_of_hours[0]}")
     if flight_levels[0] > flight_levels[1]:
         raise ValueError(f"Starting flight level can't be greater than ending flight level: {flight_levels}")
     if flight_levels[0] > 66 or flight_levels[1] > 66:
         raise ValueError(f"Given flight levels exceed 66, but only 65 available: {flight_levels}")
 
-    provide_database(
-        path_to_model,
-        number_of_hours=number_of_hours,
-        flight_levels=flight_levels
-    )
+    get_wind_data(path_to_model, range_of_hours=range_of_hours, flight_levels=flight_levels)
 
 
 if __name__ == "__main__":
