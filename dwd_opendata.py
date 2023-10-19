@@ -60,10 +60,10 @@ GRIB_FIELDS = (
     "kurtosis",
     "getNumberOfValues"
 )
-INDEX_FOR_47_DEG_LAT = 191
-INDEX_FOR_54p98_LAT = 591
-INDEX_FOR_5_DEG_LON = 447
-INDEX_FOR_14p98_DEG_LON = 947
+INDEX_47_DEG_LAT = 191
+INDEX_54P98_DEG_LAT = 591
+INDEX_5_DEG_LON = 447
+INDEX_14P98_DEG_LON = 947
 
 
 async def download_single_file(
@@ -186,7 +186,7 @@ def json_to_csv(path_to_json: Path) -> None:
     with open(path_to_json.with_suffix(".csv"), "w", encoding="utf-8") as csv_stream:
         frame.to_csv(csv_stream, sep=";", lineterminator="\n")
 
-    only_germany = data_matrix[INDEX_FOR_47_DEG_LAT:INDEX_FOR_54p98_LAT, INDEX_FOR_5_DEG_LON:INDEX_FOR_14p98_DEG_LON]
+    only_germany = data_matrix[INDEX_47_DEG_LAT:INDEX_54P98_DEG_LAT, INDEX_5_DEG_LON:INDEX_14P98_DEG_LON]
     with open(path_to_json.with_suffix(".bin"), "wb") as binary_stream:
         for column in only_germany.T:
             for val in column:
@@ -240,18 +240,20 @@ def get_wind_data(
                 url_to_bz2_file = fr"{ICOND2_URL}/{latest_hour:02d}/{field}/{bz2_file}"
                 urls[field].append(url_to_bz2_file)
         asyncio.run(download_url_list(urls[field], path_to_field_folder))
-    # return
+    print("Download of data files finished")
     for field in FIELDS:
         path_to_field_folder = dest_folder / time_stamp / field
         for hour in range(hour_start, hour_stop + 1):
             for flight_level in range(*flight_levels):
                 bz2_file = fr"{file_begin}_0{hour:02d}_{flight_level}_{field}{GRIB2}{BZ2}"
                 grib_file = fr"{file_begin}_0{hour:02d}_{flight_level}_{field}{GRIB2}"
-                print(grib_file)
                 extract_grib_file(path_to_field_folder / bz2_file)
+                print(f"{grib_file} decompressed")
                 get_grib_data(path_to_field_folder / grib_file)
+                print(f"{grib_file} data extracted")
                 json_file = fr"{file_begin}_0{hour:02d}_{flight_level}_{field}{JSON}"
                 json_to_csv(path_to_field_folder / json_file)
+                print(f"{grib_file} CSV created")
         delete_files(path_to_field_folder)
 
 
