@@ -8,7 +8,7 @@ import subprocess
 from argparse import ArgumentParser
 from pathlib import Path
 from time import localtime
-from typing import TypeAlias, Union
+from typing import Tuple, TypeAlias, Union
 
 # import eccodes
 import httpx
@@ -207,15 +207,15 @@ def optimize_json(json_dict: dict) -> dict:
 def get_wind_data(
         dest_folder: Path,
         *,
-        range_of_hours: tuple[int, int] = (0, 48),
-        flight_levels: tuple[int, int] = (1, 67),
+        range_of_hours: Tuple[int, int] = (0, 48),
+        flight_levels: Tuple[int, int] = (1, 67),
         latest: bool = False
 ) -> None:
     """Downloads the specified time from the OpenData DWD Server
 
     :param Path dest_folder: dir of the destination
-    :param tuple[int, int] range_of_hours: range of desired hours, defaults to ``(0, 48)``
-    :param tuple[int, int] flight_levels: desired flight levels, defaults to ``(1, 67)``
+    :param Tuple[int, int] range_of_hours: range of desired hours, defaults to ``(0, 48)``
+    :param Tuple[int, int] flight_levels: desired flight levels, defaults to ``(1, 67)``
     :param bool latest: include latest data or not
     """
     year, month, day, hour, *_ = localtime()

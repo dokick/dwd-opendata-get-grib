@@ -1,2 +1,76 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dwd-opendata-get-grib"
+version = "0.0.1"
+description = "Script to download grib2 data and converting it into other data format for wider usage"
+readme = { file = "README.md", content-type = "text/markdown" }
+requires-python = ">=3.8"
+license = { file = "LICENSE" }
+keywords = ["grib", "dwd", "opendata", "weather"]
+authors = [
+    { name = "Dogukan Mertoglu", email = "dogukan.mertoglu01@gmail.com" }
+]
+maintainers = [
+    { name = "Dogukan Mertoglu", email = "dogukan.mertoglu01@gmail.com" }
+]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Typing :: Typed"
+]
+dependencies = [
+    "httpx",
+    "numpy",
+    "pandas"
+]
+
+[project.scripts]
+get-grib = "dwd_opendata:main"
+
+[project.urls]
+homepage = "https://github.com/dokick/dwd-opendata-get-grib"
+repository = "https://github.com/dokick/dwd-opendata-get-grib"
+
+[project.optional-dependencies]
+dev = [
+    "coverage >=7",
+    "isort >=5",
+    "pylint >=3",
+    "pytest >=7",
+    "tox-conda"
+]
+
+[tool.setuptools]
+py-modules = ["dwd_opendata"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+# no build config after this line
+
+[tool.coverage.report]
+omit = ["tests/*"]
+
+[tool.isort]
+verbose = true
+
+[tool.pylint.main]
+fail-on = "F, E, W"
+fail-under = 8
+
 [tool.pylint.format]
 max-line-length = 120
+
+[tool.pytest.ini_options]
+testpaths = [
+    "tests"
+]
