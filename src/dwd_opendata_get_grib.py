@@ -8,9 +8,8 @@ import subprocess
 from argparse import ArgumentParser
 from pathlib import Path
 from time import localtime
-from typing import Tuple, TypeAlias, Union
+from typing import Dict, List, Tuple, TypeAlias, Union
 
-# import eccodes
 import httpx
 import numpy as np
 import pandas as pd
@@ -70,17 +69,17 @@ async def download_single_file(
         client: httpx.AsyncClient,
         semaphore: asyncio.Semaphore,
         url: str,
-        dest_folder: PathLike) -> None:
+        dest_folder: Path) -> None:
     """Downloads single file sing the given httpx client and semaphore to limit connections.
 
     :param httpx.AsyncClient client: httpx.ASyncClient
     :param asyncio.Semaphore semaphore: asyncio.Semaphore
     :param str url: url with the file at the ending
-    :param PathLike dest_folder: dir where file should be saved
+    :param Path dest_folder: dir where file should be saved
     :raises FileNotFoundError: if ``dest_folder`` doesn't exist
     """
     if not dest_folder.exists():
-        raise FileNotFoundError(f"dir \"{dest_folder}\" doesn't exist; not automatically created")
+        raise FileNotFoundError(f"dir \"{str(dest_folder)}\" doesn't exist; not automatically created")
 
     async with semaphore:
         try:
@@ -96,23 +95,25 @@ async def download_single_file(
             print(f"HTTP error occurred: {exc}")
 
 
-async def download_url_list(url_list: list[str], dest_folder: PathLike, *, limit: int = 10) -> None:
+async def download_url_list(url_list: list[str], dest_folder: Path, *, limit: int = 10) -> None:
     """Download files from a list of URLs with a limit on the number of concurrent connections.
 
     :param list[str] url_list: list of urls
-    :param PathLike dest_folder: dir of destination
+    :param Path dest_folder: dir of destination
     :param int limit: limit of parallel connections, defaults to 10
     """
     async with httpx.AsyncClient() as client:
         semaphore = asyncio.Semaphore(limit)
-        tasks = [asyncio.ensure_future(download_single_file(client, semaphore, url, dest_folder)) for url in url_list]
+        tasks = [asyncio.ensure_future(
+            download_single_file(client, semaphore, url, dest_folder)
+        ) for url in url_list]
         await asyncio.gather(*tasks)
 
 
-def extract_grib_file(path_to_grib_file: PathLike) -> None:
+def extract_grib_file(path_to_grib_file: Path) -> None:
     """Grib data is downloaded in .bz2 files. Extraction is necessary
 
-    :param PathLike path_to_grib_file: path to grib file
+    :param Path path_to_grib_file: path to grib file
     """
     with open(path_to_grib_file, mode="rb") as compressed_stream:
         decompressed_data = bz2.decompress(compressed_stream.read())
@@ -229,7 +230,7 @@ def get_wind_data(
 
     file_begin = fr"icon-d2_germany_{MODEL}_{time_stamp}"
 
-    urls = {field: [] for field in FIELDS}
+    urls: Dict[str, List[str]] = {field: [] for field in FIELDS}
 
     hour_start, hour_stop = range_of_hours
     for field in FIELDS:

@@ -1,4 +1,4 @@
-"""Test module for dwd_opendata.py"""
+"""Test module for dwd_opendata_get_grib.py"""
 
 
 def test_dummy():

@@ -34,7 +34,7 @@ dependencies = [
 ]
 
 [project.scripts]
-get-grib = "dwd_opendata:main"
+get-grib = "dwd_opendata_get_grib:main"
 
 [project.urls]
 homepage = "https://github.com/dokick/dwd-opendata-get-grib"
@@ -44,15 +44,20 @@ repository = "https://github.com/dokick/dwd-opendata-get-grib"
 dev = [
     "coverage >=7",
     "isort >=5",
+    "pandas-stubs",
     "pylint >=3",
     "pytest >=7",
+    "tox >=3"
+]
+conda = [
     "tox-conda"
 ]
 
 [tool.setuptools]
-py-modules = ["dwd_opendata"]
+py-modules = ["dwd_opendata_get_grib"]
 
 [tool.setuptools.packages.find]
+namespaces = false
 where = ["src"]
 
 # no build config after this line
