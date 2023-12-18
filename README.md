@@ -10,11 +10,21 @@ Functions to get grib data from the DWD OpenData Server and
 convert it to a format that is more readable and
 easier to access and perform Data Science on it.
 
+## Requirements
+
+- ecCodes (Installation instructions [here](https://confluence.ecmwf.int/display/ECC/ecCodes+installation))
+
 ## Installation
 
-As a package:
+As a package with pip:
 
 ``pip install dwd-opendata-get-grib``
+
+or with conda/mamba to get the eccodes library as a direct binary
+
+``conda install -c conda-forge dwd-opendata-get-grib``
+
+``mamba install -c conda-forge dwd-opendata-get-grib``
 
 As a standalone:
 
