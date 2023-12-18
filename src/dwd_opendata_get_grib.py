@@ -5,6 +5,7 @@ import bz2
 import json
 import os
 import subprocess
+import sys
 from argparse import ArgumentParser
 from pathlib import Path
 from time import localtime
@@ -130,12 +131,19 @@ def get_grib_data(path_to_grib_file: Path) -> None:
     #     message = next(reader)
     #     grib_data = {field_name: message.get(field_name) for field_name in GRIB_FIELDS if field_name != "values"}
     #     grib_data["values"] = list(message.get("values"))
-    grib_stdout = subprocess.run(
-        ["grib_dump", "-j", str(path_to_grib_file)],
-        capture_output=True,
-        text=True,
-        check=True
-    )
+    try:
+        grib_stdout = subprocess.run(
+            ["grib_dump", "-j", str(path_to_grib_file)],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+    except FileNotFoundError as exc:
+        print(exc.args)
+        print(f"Missing file: {exc.filename}")
+        print("ecCodes is probably not installed. ecCodes isn't available on PyPI."
+              " Refer here for installation: https://confluence.ecmwf.int/display/ECC/ecCodes+Installation")
+        sys.exit(1)
     grib_data = optimize_json(json.loads(grib_stdout.stdout))
     with open(path_to_grib_file.with_suffix(".json"), "w", encoding="utf-8") as json_stream:
         json.dump(grib_data, json_stream, indent=4)

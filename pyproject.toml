@@ -37,8 +37,8 @@ dependencies = [
 get-grib = "dwd_opendata_get_grib:main"
 
 [project.urls]
-homepage = "https://github.com/dokick/dwd-opendata-get-grib"
-repository = "https://github.com/dokick/dwd-opendata-get-grib"
+Homepage = "https://github.com/dokick/dwd-opendata-get-grib"
+Repository = "https://github.com/dokick/dwd-opendata-get-grib"
 
 [project.optional-dependencies]
 dev = [
