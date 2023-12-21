@@ -3,19 +3,16 @@
 import asyncio
 import bz2
 import json
-import os
 import subprocess
 import sys
 from argparse import ArgumentParser
 from pathlib import Path
 from time import localtime
-from typing import Dict, List, Tuple, TypeAlias, Union
+from typing import Any, Dict, Iterable, List, Mapping, Sequence, Tuple
 
 import httpx
 import numpy as np
 import pandas as pd
-
-PathLike: TypeAlias = Union[str, bytes, os.PathLike, Path]
 
 BZ2 = r".bz2"
 FIELDS = "u", "v", "w"
@@ -96,10 +93,10 @@ async def download_single_file(
             print(f"HTTP error occurred: {exc}")
 
 
-async def download_url_list(url_list: list[str], dest_folder: Path, *, limit: int = 10) -> None:
+async def download_url_list(url_list: Iterable[str], dest_folder: Path, *, limit: int = 10) -> None:
     """Download files from a list of URLs with a limit on the number of concurrent connections.
 
-    :param list[str] url_list: list of urls
+    :param Iterable[str] url_list: list of urls
     :param Path dest_folder: dir of destination
     :param int limit: limit of parallel connections, defaults to 10
     """
@@ -159,7 +156,7 @@ def delete_files(dest_folder: Path, *, suffix: str = ".grib2") -> None:
         file.unlink(missing_ok=True)
 
 
-def json_to_csv(path_to_json: Path) -> None:
+def json_to_csv(path_to_json: Path) -> np.ndarray:
     """Overwrites json to csv
 
     :param Path path_to_json: path to json file
@@ -196,21 +193,36 @@ def json_to_csv(path_to_json: Path) -> None:
         frame.to_csv(csv_stream, sep=";", lineterminator="\n")
 
     only_germany = data_matrix[INDEX_47_DEG_LAT:INDEX_54P98_DEG_LAT, INDEX_5_DEG_LON:INDEX_14P98_DEG_LON]
-    with open(path_to_json.with_suffix(".bin"), "wb") as binary_stream:
-        for column in only_germany.T:
-            for val in column:
-                binary_stream.write(bytes(val))
+    return only_germany
+    # with open(path_to_json.with_suffix(".bin"), "wb") as binary_stream:
+    #     for column in only_germany.T:
+    #         for val in column:
+    #             binary_stream.write(bytes(val))
 
 
-def optimize_json(json_dict: dict) -> dict:
+def optimize_json(json_dict: Mapping[str, Sequence[Sequence[Mapping[str, Any]]]]) -> Dict[str, Any]:
     """Optimizes json output from DWD server
 
-    :param dict json_dict: raw json from grib_dump output in dict format
-    :return dict: better and more readable json format
+    :param Mapping[str, Sequence[Sequence[Mapping[str, Any]]]] json_dict: raw json from grib_dump output in dict format
+    :return Dict[str, Any]: better and more readable json format
     """
     json_obj = json_dict["messages"][0]
     amount_of_messages = len(json_obj)
     return {json_obj[i]["key"]: json_obj[i]["value"] for i in range(amount_of_messages)}
+
+
+def create_dotbin_over_all_flight_levels(data_matrices: Iterable[np.ndarray], path_to_json: Path):
+    """Creates .bin files over all flight levels so reading into MATLab is easier.
+
+    :param Iterable[np.ndarray] data_matrices: data matrices of germany
+    :param Path path_to_json: path to json file without flight level specification
+    :return:
+    """
+    with open(path_to_json.with_suffix(".bin"), "wb") as binary_stream:
+        for only_germany_height in data_matrices:
+            for column in only_germany_height.T:
+                for val in column:
+                    binary_stream.write(bytes(val))
 
 
 def get_wind_data(
@@ -253,6 +265,7 @@ def get_wind_data(
     for field in FIELDS:
         path_to_field_folder = dest_folder / time_stamp / field
         for hour in range(hour_start, hour_stop + 1):
+            data_matrices: List[np.ndarray] = []
             for flight_level in range(*flight_levels):
                 bz2_file = fr"{file_begin}_0{hour:02d}_{flight_level}_{field}{GRIB2}{BZ2}"
                 grib_file = fr"{file_begin}_0{hour:02d}_{flight_level}_{field}{GRIB2}"
@@ -260,9 +273,13 @@ def get_wind_data(
                 print(f"{grib_file} decompressed")
                 get_grib_data(path_to_field_folder / grib_file)
                 print(f"{grib_file} data extracted")
-                json_file = fr"{file_begin}_0{hour:02d}_{flight_level}_{field}{JSON}"
-                json_to_csv(path_to_field_folder / json_file)
+                json_file: str = fr"{file_begin}_0{hour:02d}_{flight_level}_{field}{JSON}"
+                data_matrices.append(json_to_csv(path_to_field_folder / json_file))
                 print(f"{grib_file} CSV created")
+            create_dotbin_over_all_flight_levels(
+                data_matrices,
+                path_to_field_folder / fr"{file_begin}_0{hour:02d}_{field}{JSON}"
+            )
         delete_files(path_to_field_folder)
 
 
@@ -293,7 +310,8 @@ def main() -> None:
 
     path_to_model = Path(args.output).resolve()
     range_of_hours = int(args.hours[0]), int(args.hours[1])
-    flight_levels = tuple(args.level)  # opendata.dwd.de uploads full levels, thus lowest flight level is 65
+    flight_levels = int(args.level[0]), int(args.level[1])
+    # opendata.dwd.de uploads full levels, thus lowest flight level is 65
 
     if range_of_hours[1] < range_of_hours[0]:
         raise ValueError(f"Range of hours must be in order: {range_of_hours}")
