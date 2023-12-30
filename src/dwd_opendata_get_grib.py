@@ -3,21 +3,21 @@
 import asyncio
 import bz2
 import json
-import subprocess
 import sys
 from argparse import ArgumentParser
 from pathlib import Path
 from time import localtime
-from typing import Any, Dict, Iterable, List, Mapping, Sequence, Tuple
+from typing import Dict, Iterable, List, Mapping, Sequence, Tuple, Union
 
 import httpx
 import numpy as np
 import pandas as pd
+from eccodes import codes_dump, codes_grib_new_from_file
 
-BZ2 = r".bz2"
+BZ2_SUFFIX = r".bz2"
 FIELDS = "u", "v", "w"
-GRIB2 = r".grib2"
-JSON = r".json"
+GRIB2_SUFFIX = r".grib2"
+JSON_SUFFIX = r".json"
 MODEL = r"regular-lat-lon_model-level"
 ICOND2_URL = r"https://opendata.dwd.de/weather/nwp/icon-d2/grib"
 GRIB_FIELDS = (
@@ -67,7 +67,8 @@ async def download_single_file(
         client: httpx.AsyncClient,
         semaphore: asyncio.Semaphore,
         url: str,
-        dest_folder: Path) -> None:
+        dest_folder: Path
+) -> None:
     """Downloads single file sing the given httpx client and semaphore to limit connections.
 
     :param httpx.AsyncClient client: httpx.ASyncClient
@@ -98,7 +99,7 @@ async def download_url_list(url_list: Iterable[str], dest_folder: Path, *, limit
 
     :param Iterable[str] url_list: list of urls
     :param Path dest_folder: dir of destination
-    :param int limit: limit of parallel connections, defaults to 10
+    :param int limit: limit of parallel connections, defaults to ``10``
     """
     async with httpx.AsyncClient() as client:
         semaphore = asyncio.Semaphore(limit)
@@ -120,30 +121,30 @@ def extract_grib_file(path_to_grib_file: Path) -> None:
 
 
 def get_grib_data(path_to_grib_file: Path) -> None:
-    """Dump grib data with eccodes functions
+    """Dump grib data with ecCodes functions
 
     :param Path path_to_grib_file: path to grib file
     """
-    # with eccodes.FileReader(path_to_grib_file) as reader:
-    #     message = next(reader)
-    #     grib_data = {field_name: message.get(field_name) for field_name in GRIB_FIELDS if field_name != "values"}
-    #     grib_data["values"] = list(message.get("values"))
     try:
-        grib_stdout = subprocess.run(
-            ["grib_dump", "-j", str(path_to_grib_file)],
-            capture_output=True,
-            text=True,
-            check=True
-        )
+        with open(path_to_grib_file, "rb") as grib_stream:
+            grib_id = codes_grib_new_from_file(grib_stream)
+        # grib_stdout = subprocess.run(
+        #     ["grib_dump", "-j", str(path_to_grib_file)],
+        #     capture_output=True,
+        #     text=True,
+        #     check=True
+        # )
     except FileNotFoundError as exc:
         print(exc.args)
         print(f"Missing file: {exc.filename}")
-        print("ecCodes is probably not installed. ecCodes isn't available on PyPI."
-              " Refer here for installation: https://confluence.ecmwf.int/display/ECC/ecCodes+Installation")
-        sys.exit(1)
-    grib_data = optimize_json(json.loads(grib_stdout.stdout))
+        sys.exit(
+            "ecCodes is probably not installed. ecCodes isn't available on PyPI."
+            " Refer here for installation: https://confluence.ecmwf.int/display/ECC/ecCodes+Installation"
+        )
+    # grib_data = optimize_json(json.loads(grib_stdout.stdout))
     with open(path_to_grib_file.with_suffix(".json"), "w", encoding="utf-8") as json_stream:
-        json.dump(grib_data, json_stream, indent=4)
+        codes_dump(grib_id, json_stream, mode="json")
+        # json.dump(grib_data, json_stream, indent=4)
 
 
 def delete_files(dest_folder: Path, *, suffix: str = ".grib2") -> None:
@@ -162,9 +163,16 @@ def json_to_csv(path_to_json: Path) -> np.ndarray:
     :param Path path_to_json: path to json file
     """
     with open(path_to_json, "r", encoding="utf-8") as json_stream:
-        json_dict = json.load(json_stream)
-        new_json_dict = {key: val for key, val in json_dict.items() if key != "values"}
-        values = np.array(json_dict["values"], dtype=np.float64)
+        json_key_val_seq = json.load(json_stream)
+        new_json_dict = {}
+        for json_obj in json_key_val_seq:
+            key = json_obj["key"]
+            val = json_obj["value"]
+            if key == "values":
+                _values = val
+            else:
+                new_json_dict[key] = val
+        values = np.array(_values, dtype=np.float64)
 
     number_longitude_points = new_json_dict["Ni"]
     number_latitude_points = new_json_dict["Nj"]
@@ -186,7 +194,7 @@ def json_to_csv(path_to_json: Path) -> np.ndarray:
 
     frame = pd.DataFrame(data_matrix, index=df_idx, columns=df_cols)
 
-    with open(path_to_json, "w", encoding="utf8") as json_stream:
+    with open(path_to_json, "w", encoding="utf-8") as json_stream:
         json.dump(new_json_dict, json_stream, indent=4)
 
     with open(path_to_json.with_suffix(".csv"), "w", encoding="utf-8") as csv_stream:
@@ -200,23 +208,24 @@ def json_to_csv(path_to_json: Path) -> np.ndarray:
     #             binary_stream.write(bytes(val))
 
 
-def optimize_json(json_dict: Mapping[str, Sequence[Sequence[Mapping[str, Any]]]]) -> Dict[str, Any]:
+def optimize_json(
+        json_key_val_seq: Sequence[Mapping[str, Union[int, float, str]]]
+) -> Dict[str, Union[int, float, str]]:
     """Optimizes json output from DWD server
 
-    :param Mapping[str, Sequence[Sequence[Mapping[str, Any]]]] json_dict: raw json from grib_dump output in dict format
-    :return Dict[str, Any]: better and more readable json format
+    :param Sequence[Mapping[str, Union[int, float, str]]] json_key_val_seq: raw json from codes_dump output
+    :return Dict[str, Union[int, float, str]]: better and more readable json format
     """
-    json_obj = json_dict["messages"][0]
-    amount_of_messages = len(json_obj)
-    return {json_obj[i]["key"]: json_obj[i]["value"] for i in range(amount_of_messages)}
+    amount_of_messages = len(json_key_val_seq)
+    return {json_key_val_seq[i]["key"]: json_key_val_seq[i]["value"] for i in range(amount_of_messages)}
+    # return {json_obj["key"]: json_obj["value"] for json_obj in json_key_val_seq}
 
 
-def create_dotbin_over_all_flight_levels(data_matrices: Iterable[np.ndarray], path_to_json: Path):
+def create_binary_file_over_all_flight_levels(data_matrices: Iterable[np.ndarray], path_to_json: Path) -> None:
     """Creates .bin files over all flight levels so reading into MATLab is easier.
 
     :param Iterable[np.ndarray] data_matrices: data matrices of germany
     :param Path path_to_json: path to json file without flight level specification
-    :return:
     """
     with open(path_to_json.with_suffix(".bin"), "wb") as binary_stream:
         for only_germany_height in data_matrices:
@@ -229,18 +238,18 @@ def get_wind_data(
         dest_folder: Path,
         *,
         range_of_hours: Tuple[int, int] = (0, 48),
-        flight_levels: Tuple[int, int] = (1, 67),
+        flight_levels: Tuple[int, int] = (1, 65),
         latest: bool = False
 ) -> None:
     """Downloads the specified time from the OpenData DWD Server
 
     :param Path dest_folder: dir of the destination
     :param Tuple[int, int] range_of_hours: range of desired hours, defaults to ``(0, 48)``
-    :param Tuple[int, int] flight_levels: desired flight levels, defaults to ``(1, 67)``
+    :param Tuple[int, int] flight_levels: desired flight levels, defaults to ``(1, 65)``
     :param bool latest: include latest data or not
     """
-    year, month, day, hour, *_ = localtime()
-    latest_hour = hour - hour % 3
+    year, month, day, local_hour, *_ = localtime()
+    latest_hour = local_hour - local_hour % 3
     if not latest:
         latest_hour -= 3  # -3 because the latest hour might not be uploaded
     time_stamp = f"{year}{month:02d}{day:02d}{latest_hour:02d}"
@@ -253,32 +262,34 @@ def get_wind_data(
     urls: Dict[str, List[str]] = {field: [] for field in FIELDS}
 
     hour_start, hour_stop = range_of_hours
+    flight_level_start, flight_level_stop = flight_levels
     for field in FIELDS:
         path_to_field_folder = dest_folder / time_stamp / field
         for hour in range(hour_start, hour_stop + 1):
-            for flight_level in range(*flight_levels):
-                bz2_file = fr"{file_begin}_0{hour:02d}_{flight_level}_{field}{GRIB2}{BZ2}"
+            for flight_level in range(flight_level_start, flight_level_stop + 1):
+                bz2_file: str = fr"{file_begin}_0{hour:02d}_{flight_level}_{field}{GRIB2_SUFFIX}{BZ2_SUFFIX}"
                 url_to_bz2_file = fr"{ICOND2_URL}/{latest_hour:02d}/{field}/{bz2_file}"
                 urls[field].append(url_to_bz2_file)
         asyncio.run(download_url_list(urls[field], path_to_field_folder))
     print("Download of data files finished")
+
     for field in FIELDS:
         path_to_field_folder = dest_folder / time_stamp / field
         for hour in range(hour_start, hour_stop + 1):
             data_matrices: List[np.ndarray] = []
-            for flight_level in range(*flight_levels):
-                bz2_file = fr"{file_begin}_0{hour:02d}_{flight_level}_{field}{GRIB2}{BZ2}"
-                grib_file = fr"{file_begin}_0{hour:02d}_{flight_level}_{field}{GRIB2}"
+            for flight_level in range(flight_level_start, flight_level_stop + 1):
+                grib_file: str = fr"{file_begin}_0{hour:02d}_{flight_level}_{field}{GRIB2_SUFFIX}"
+                bz2_file = fr"{grib_file}{BZ2_SUFFIX}"
                 extract_grib_file(path_to_field_folder / bz2_file)
                 print(f"{grib_file} decompressed")
                 get_grib_data(path_to_field_folder / grib_file)
                 print(f"{grib_file} data extracted")
-                json_file: str = fr"{file_begin}_0{hour:02d}_{flight_level}_{field}{JSON}"
+                json_file: str = fr"{file_begin}_0{hour:02d}_{flight_level}_{field}{JSON_SUFFIX}"
                 data_matrices.append(json_to_csv(path_to_field_folder / json_file))
                 print(f"{grib_file} CSV created")
-            create_dotbin_over_all_flight_levels(
+            create_binary_file_over_all_flight_levels(
                 data_matrices,
-                path_to_field_folder / fr"{file_begin}_0{hour:02d}_{field}{JSON}"
+                path_to_field_folder / fr"{file_begin}_0{hour:02d}_{field}{JSON_SUFFIX}"
             )
         delete_files(path_to_field_folder)
 
@@ -297,8 +308,8 @@ def main() -> None:
     parser.add_argument(
         "--level",
         nargs=2,
-        default=(38, 66),
-        help="Range of levels to include, left-side including, right-side excluding, refer to README to flight levels"
+        default=(38, 65),
+        help="Range of levels to include, left-side and right-side including, refer to README to flight levels"
     )
     parser.add_argument(
         "--latest",
@@ -321,8 +332,8 @@ def main() -> None:
         raise ValueError(f"Range of hours must be positive: {range_of_hours[0]}")
     if flight_levels[0] > flight_levels[1]:
         raise ValueError(f"Starting flight level can't be greater than ending flight level: {flight_levels}")
-    if flight_levels[0] > 66 or flight_levels[1] > 66:
-        raise ValueError(f"Given flight levels exceed 66, but only 65 available: {flight_levels}")
+    if flight_levels[0] > 65 or flight_levels[1] > 65:
+        raise ValueError(f"Given flight levels exceed 65, but only 1-65 are available: {flight_levels}")
 
     get_wind_data(path_to_model, range_of_hours=range_of_hours, flight_levels=flight_levels)
 
