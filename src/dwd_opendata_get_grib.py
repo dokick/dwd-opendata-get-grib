@@ -252,6 +252,9 @@ def get_wind_data(
     latest_hour = local_hour - local_hour % 3
     if not latest:
         latest_hour -= 3  # -3 because the latest hour might not be uploaded
+    if latest_hour < 0:
+        day -= 1
+        latest_hour = 24 + latest_hour
     time_stamp = f"{year}{month:02d}{day:02d}{latest_hour:02d}"
 
     for field in FIELDS:
