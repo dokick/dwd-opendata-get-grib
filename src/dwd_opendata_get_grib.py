@@ -3,6 +3,7 @@
 import asyncio
 import bz2
 import json
+import subprocess  # only for grib_dump solution until bundling with pyinstaller works
 import sys
 from argparse import ArgumentParser
 from pathlib import Path
@@ -12,7 +13,8 @@ from typing import Dict, Iterable, List, Mapping, Sequence, Tuple, Union
 import httpx
 import numpy as np
 import pandas as pd
-from eccodes import codes_dump, codes_grib_new_from_file
+# from eccodes import codes_dump, codes_grib_new_from_file
+# from gribapi import codes_dump, codes_new_from_file
 
 BZ2_SUFFIX = r".bz2"
 FIELDS = "u", "v", "w"
@@ -126,14 +128,15 @@ def get_grib_data(path_to_grib_file: Path) -> None:
     :param Path path_to_grib_file: path to grib file
     """
     try:
-        with open(path_to_grib_file, "rb") as grib_stream:
-            grib_id = codes_grib_new_from_file(grib_stream)
-        # grib_stdout = subprocess.run(
-        #     ["grib_dump", "-j", str(path_to_grib_file)],
-        #     capture_output=True,
-        #     text=True,
-        #     check=True
-        # )
+        # with open(path_to_grib_file, "rb") as grib_stream:
+            # grib_id = codes_new_from_file(grib_stream, 1)  # 1 stands for CODES_PRODUCT_GRIB
+            # grib_id = codes_grib_new_from_file(grib_stream)
+        grib_stdout = subprocess.run(
+            ["grib_dump", "-j", str(path_to_grib_file)],
+            capture_output=True,
+            text=True,
+            check=True
+        )
     except FileNotFoundError as exc:
         print(exc.args)
         print(f"Missing file: {exc.filename}")
@@ -141,10 +144,10 @@ def get_grib_data(path_to_grib_file: Path) -> None:
             "ecCodes is probably not installed. ecCodes isn't available on PyPI."
             " Refer here for installation: https://confluence.ecmwf.int/display/ECC/ecCodes+Installation"
         )
-    # grib_data = optimize_json(json.loads(grib_stdout.stdout))
+    grib_data = optimize_json(json.loads(grib_stdout.stdout)["messages"][0])
     with open(path_to_grib_file.with_suffix(".json"), "w", encoding="utf-8") as json_stream:
-        codes_dump(grib_id, json_stream, mode="json")
-        # json.dump(grib_data, json_stream, indent=4)
+        # codes_dump(grib_id, json_stream, mode="json")
+        json.dump(grib_data, json_stream, indent=4)
 
 
 def delete_files(dest_folder: Path, *, suffix: str = ".grib2") -> None:
@@ -163,11 +166,17 @@ def json_to_csv(path_to_json: Path) -> np.ndarray:
     :param Path path_to_json: path to json file
     """
     with open(path_to_json, "r", encoding="utf-8") as json_stream:
-        json_key_val_seq = json.load(json_stream)
+        # json_key_val_seq: Sequence[Dict[str, Union[int, float, str]]] = json.load(json_stream)
+        json_key_val_seq: Dict[str, Union[int, float, str]] = json.load(json_stream)
         new_json_dict = {}
-        for json_obj in json_key_val_seq:
-            key = json_obj["key"]
-            val = json_obj["value"]
+        # for key_val_pair in json_key_val_seq:
+        #     key = key_val_pair["key"]
+        #     val = key_val_pair["value"]
+        #     if key == "values":
+        #         _values = val
+        #     else:
+        #         new_json_dict[key] = val
+        for key, val in json_key_val_seq.items():
             if key == "values":
                 _values = val
             else:
@@ -309,6 +318,7 @@ def main() -> None:
         help="Range of hours that will be downloaded, including right side"
     )
     parser.add_argument(
+        "-l",
         "--level",
         nargs=2,
         default=(38, 65),
