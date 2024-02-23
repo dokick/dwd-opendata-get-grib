@@ -1,3 +1,6 @@
+# compile command for pyinstaller
+# pyinstaller --clean --add-binary "~\miniforge3\pkgs\eccodes-2.32.1-habb35d2_0\Library\bin\grib_dump.exe;." .\src\dwd_opendata_get_grib.py
+
 [build-system]
 requires = ["setuptools>=61", "wheel"]
 build-backend = "setuptools.build_meta"
