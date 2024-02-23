@@ -7,7 +7,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dwd-opendata-get-grib"
-version = "0.0.4"
+version = "0.0.5"
 description = "Script to download grib2 data and converting it into other data format for wider usage"
 readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.8"
