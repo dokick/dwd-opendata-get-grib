@@ -230,6 +230,9 @@ def create_meta_json_and_csv_from_grib_id(grib_id: int, json_file_path: Path) ->
     values = codes_get_double_array(grib_id, "values")  # codes_get_double_array uses float64
 
     data_matrix = values.reshape(number_latitude_points, number_longitude_points)
+    # with debugging and numerical analysis this reshaping is correct. values from json output are written
+    # in this order: all longitude values for one latitude value, for all latitude values (basically C order)
+    # data_matrix = values.reshape(number_longitude_points, number_latitude_points) <-- this is wrong
 
     frame = pd.DataFrame(data_matrix, index=df_idx, columns=df_cols)
     frame.to_csv(json_file_path.with_suffix(".csv"), sep=";", lineterminator="\n")
@@ -300,9 +303,8 @@ def create_binary_file_over_all_flight_levels(data_matrices: Iterable[np.ndarray
     """
     with open(json_file_path.with_suffix(".bin"), "wb") as binary_stream:
         for only_germany_height in data_matrices:
-            for column in only_germany_height.T:
-                for val in column:
-                    binary_stream.write(bytes(val))
+            for val in np.nditer(only_germany_height, order="C"):
+                binary_stream.write(bytes(val))
 
 
 def from_bz2_to_csv_and_json(paths: Tuple[Path, Path, Path]) -> Tuple[Tuple[Path, Path, Path], np.ndarray]:
