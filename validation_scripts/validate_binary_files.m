@@ -10,16 +10,18 @@ number_of_lon_elements = 500;
 for height = 1:number_of_height_levels
     for lat = 1:number_of_lat_elements
         for lon = 1:number_of_lon_elements
-        UmatG(height, lat, lon) = DataUmatG( ...
-            (height-1)*number_of_lon_elements*number_of_lat_elements + (number_of_lat_elements*(lat-1) + lon) ...
-        );
+            UmatG(lat, lon, height) = DataUmatG( ...
+                (height-1)*number_of_lon_elements*number_of_lat_elements ...
+                + (lat-1)*number_of_lon_elements
+                + lon ...
+            );
         end
     end
 end
 
 csv = readtable("icon-d2_germany_regular-lat-lon_model-level_2024022512_000_38_u.csv");
 
-disp(UmatG(1, 1:3, 1:3));
+disp(UmatG(1:10, 1:15, 1));
 
 row_47_deg = 192;
 column_five_deg = 448;
