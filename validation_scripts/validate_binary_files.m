@@ -1,4 +1,5 @@
-filename = 'icon-d2_germany_regular-lat-lon_model-level_2024022512_000_u.bin';
+timestamp = "2025090409";
+filename = "icon-d2_germany_regular-lat-lon_model-level_" + timestamp +  "_000_u.bin";
 fileID = fopen([filename], 'r');
 DataUmatG = fread(fileID, 'double');
 fclose(fileID);
@@ -12,14 +13,15 @@ for height = 1:number_of_height_levels
         for lon = 1:number_of_lon_elements
             UmatG(lat, lon, height) = DataUmatG( ...
                 (height-1)*number_of_lon_elements*number_of_lat_elements ...
-                + (lat-1)*number_of_lon_elements
+                + (lat-1)*number_of_lon_elements ...
                 + lon ...
             );
         end
     end
 end
 
-csv = readtable("icon-d2_germany_regular-lat-lon_model-level_2024022512_000_38_u.csv");
+csv_filename = "icon-d2_germany_regular-lat-lon_model-level_" + timestamp + "_000_38_u.csv";
+csv = readtable(csv_filename);
 
 disp(UmatG(1:10, 1:15, 1));
 
