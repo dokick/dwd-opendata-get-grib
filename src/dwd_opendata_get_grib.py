@@ -252,7 +252,13 @@ def create_meta_json_and_csv_from_json(json_file_path: Path) -> np.ndarray:
         # json_key_val_seq: Sequence[Dict[str, Union[int, float, str]]] = json.load(json_stream)
         json_key_val_seq: Dict[str, Union[float, str]] = json.load(json_stream)
 
-    meta_json = {grib_meta_field: json_key_val_seq[grib_meta_field] for grib_meta_field in GRIB_META_FIELDS}
+    meta_json = {}
+    for grib_meta_field in GRIB_META_FIELDS:
+        try:
+            meta_json[grib_meta_field] = json_key_val_seq[grib_meta_field]
+        except KeyError:
+            continue
+    # meta_json = {grib_meta_field: json_key_val_seq[grib_meta_field] for grib_meta_field in GRIB_META_FIELDS}
     with open(json_file_path, "w", encoding="utf-8") as json_stream:
         json.dump(meta_json, json_stream, indent=4)
 

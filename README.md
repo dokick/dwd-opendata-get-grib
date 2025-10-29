@@ -67,3 +67,10 @@ Download .zip archive from GitHub Releases. Built with pyinstaller.
 | 950                  |
 | 975                  |
 | 1000                 |
+
+## Build
+
+With pyinstaller:
+
+``pyinstaller --clean --add-binary "~/path/to/eccodes/installation/Library/bin/grib_dump.exe;."
+.\src\dwd_opendata_get_grib.py``
