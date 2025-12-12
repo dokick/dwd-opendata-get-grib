@@ -433,6 +433,7 @@ def main() -> None:
     path_to_model = Path(args.output).resolve()
     range_of_hours = int(args.hours[0]), int(args.hours[1])
     flight_levels = int(args.level[0]), int(args.level[1])
+    latest: bool = argsl.latest
     # opendata.dwd.de uploads full levels, thus lowest flight level is 65
 
     if range_of_hours[1] < range_of_hours[0]:
@@ -446,7 +447,7 @@ def main() -> None:
     if flight_levels[0] > 65 or flight_levels[1] > 65:
         raise ValueError(f"Given flight levels exceed 65, but only 1-65 are available: {flight_levels}")
 
-    get_wind_data(path_to_model, range_of_hours=range_of_hours, flight_levels=flight_levels)
+    get_wind_data(path_to_model, range_of_hours=range_of_hours, flight_levels=flight_levels, latest=latest)
 
 
 if __name__ == "__main__":
