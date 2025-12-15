@@ -433,7 +433,7 @@ def main() -> None:
     path_to_model = Path(args.output).resolve()
     range_of_hours = int(args.hours[0]), int(args.hours[1])
     flight_levels = int(args.level[0]), int(args.level[1])
-    latest: bool = argsl.latest
+    latest: bool = args.latest
     # opendata.dwd.de uploads full levels, thus lowest flight level is 65
 
     if range_of_hours[1] < range_of_hours[0]:
